@@ -21,7 +21,7 @@ func (c *Client) commentTarget(ctx context.Context, idOrURL string) (oid int64, 
 		return id.SID, 14, nil
 	case KindDynamic:
 		var n int64
-		fmt.Sscan(id.Dynamic, &n)
+		_, _ = fmt.Sscan(id.Dynamic, &n)
 		return n, 17, nil
 	}
 	return 0, 0, fmt.Errorf("no comment area for %s", idOrURL)

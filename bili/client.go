@@ -197,7 +197,7 @@ var dryRunBody = []byte(`{"code":0,"message":"dry-run","data":null,"result":null
 // rawGet performs a GET with retries and returns the decompressed body.
 func (c *Client) rawGet(ctx context.Context, rawURL string, headers map[string]string) ([]byte, error) {
 	if c.cfg.DryRun {
-		fmt.Fprintf(dryRunOut, "GET %s\n", rawURL)
+		_, _ = fmt.Fprintf(dryRunOut, "GET %s\n", rawURL)
 		return dryRunBody, nil
 	}
 	var last error
@@ -236,7 +236,7 @@ func (c *Client) rawGet(ctx context.Context, rawURL string, headers map[string]s
 			continue
 		}
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			last = fmt.Errorf("HTTP %d from %s", resp.StatusCode, rawURL)
 			if ra := resp.Header.Get("Retry-After"); ra != "" {
 				if secs, e := time.ParseDuration(ra + "s"); e == nil {
@@ -250,7 +250,7 @@ func (c *Client) rawGet(ctx context.Context, rawURL string, headers map[string]s
 			continue
 		}
 		body, err := readBody(resp)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			last = err
 			continue
@@ -271,7 +271,7 @@ func readBody(resp *http.Response) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer gz.Close()
+		defer func() { _ = gz.Close() }()
 		r = gz
 	}
 	return io.ReadAll(io.LimitReader(r, 64<<20))

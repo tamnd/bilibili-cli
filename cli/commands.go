@@ -106,7 +106,7 @@ func newVideoCmd(a *App) *cobra.Command {
 						return err
 					}
 					for _, t := range res.Video.Tags {
-						out.Emit(map[string]string{"tag": t})
+						_ = out.Emit(map[string]string{"tag": t})
 					}
 				}
 				return out.Close()
@@ -543,7 +543,7 @@ func emitTerms(a *App, terms []string) error {
 		return err
 	}
 	for _, t := range terms {
-		out.Emit(bili.Suggestion{Term: t})
+		_ = out.Emit(bili.Suggestion{Term: t})
 	}
 	return out.Close()
 }
