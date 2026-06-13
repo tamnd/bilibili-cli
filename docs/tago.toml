@@ -1,0 +1,10 @@
+title       = "bili"
+baseURL     = "https://bilibili-cli.tamnd.com/"
+description = "A fast, friendly command line for bilibili.com. One binary that resolves any video, user, comment, danmaku, dynamic, live room, bangumi, audio, article, or favorite into clean structured records, and crawls the whole graph into JSONL."
+contentDir  = "content"
+outputDir   = "public"
+theme       = "tago-doks"
+syntaxHighlight = "true"
+
+[params]
+github = "https://github.com/tamnd/bilibili-cli"
