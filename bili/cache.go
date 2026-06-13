@@ -71,14 +71,14 @@ func ClearCache(dir string) (int, error) {
 			files, _ := os.ReadDir(sub)
 			n += len(files)
 		}
-		os.RemoveAll(sub)
+		_ = os.RemoveAll(sub)
 	}
 	return n, nil
 }
 
 // CacheStats returns the number of cached files and total bytes.
 func CacheStats(dir string) (files int, bytes int64) {
-	filepath.Walk(dir, func(_ string, fi os.FileInfo, err error) error {
+	_ = filepath.Walk(dir, func(_ string, fi os.FileInfo, err error) error {
 		if err != nil || fi.IsDir() {
 			return nil
 		}

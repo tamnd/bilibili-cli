@@ -80,27 +80,27 @@ func (o *Output) Emit(v any) error {
 	switch o.format {
 	case FormatJSON:
 		if !o.jsonOpen {
-			io.WriteString(o.w, "[")
+			_, _ = io.WriteString(o.w, "[")
 			o.jsonOpen = true
 		}
 		if !o.jsonFirst {
-			io.WriteString(o.w, ",")
+			_, _ = io.WriteString(o.w, ",")
 		}
 		o.jsonFirst = false
 		b, err := json.Marshal(v)
 		if err != nil {
 			return err
 		}
-		io.WriteString(o.w, "\n  ")
-		o.w.Write(b)
+		_, _ = io.WriteString(o.w, "\n  ")
+		_, _ = o.w.Write(b)
 		return nil
 	case FormatJSONL:
 		b, err := json.Marshal(v)
 		if err != nil {
 			return err
 		}
-		o.w.Write(b)
-		io.WriteString(o.w, "\n")
+		_, _ = o.w.Write(b)
+		_, _ = io.WriteString(o.w, "\n")
 		return nil
 	case FormatRaw:
 		if o.tmpl != nil {
@@ -108,12 +108,12 @@ func (o *Output) Emit(v any) error {
 			if err := o.tmpl.Execute(o.w, m); err != nil {
 				return err
 			}
-			io.WriteString(o.w, "\n")
+			_, _ = io.WriteString(o.w, "\n")
 			return nil
 		}
 		b, _ := json.MarshalIndent(v, "", "  ")
-		o.w.Write(b)
-		io.WriteString(o.w, "\n")
+		_, _ = o.w.Write(b)
+		_, _ = io.WriteString(o.w, "\n")
 		return nil
 	case FormatYAML:
 		return o.emitYAML(v)
@@ -139,7 +139,7 @@ func (o *Output) emitTable(v any) error {
 	if !o.headerDone {
 		o.cols = cols
 		if !o.noHeader {
-			fmt.Fprintln(o.tw, strings.Join(cols, "\t"))
+			_, _ = fmt.Fprintln(o.tw, strings.Join(cols, "\t"))
 		}
 		o.headerDone = true
 	}
@@ -147,7 +147,7 @@ func (o *Output) emitTable(v any) error {
 	for i, c := range o.cols {
 		row[i] = oneLine(vals[c])
 	}
-	fmt.Fprintln(o.tw, strings.Join(row, "\t"))
+	_, _ = fmt.Fprintln(o.tw, strings.Join(row, "\t"))
 	return nil
 }
 
@@ -156,7 +156,7 @@ func (o *Output) emitCSV(v any) error {
 	if !o.headerDone {
 		o.cols = cols
 		if !o.noHeader {
-			o.csvw.Write(cols)
+			_ = o.csvw.Write(cols)
 		}
 		o.headerDone = true
 	}
@@ -169,14 +169,14 @@ func (o *Output) emitCSV(v any) error {
 
 func (o *Output) emitYAML(v any) error {
 	cols, vals := o.columnsFor(v)
-	fmt.Fprintf(o.w, "- ")
+	_, _ = fmt.Fprintf(o.w, "- ")
 	first := true
 	for _, c := range cols {
 		if !first {
-			fmt.Fprintf(o.w, "  ")
+			_, _ = fmt.Fprintf(o.w, "  ")
 		}
 		first = false
-		fmt.Fprintf(o.w, "%s: %s\n", c, yamlVal(vals[c]))
+		_, _ = fmt.Fprintf(o.w, "%s: %s\n", c, yamlVal(vals[c]))
 	}
 	return nil
 }
@@ -185,7 +185,7 @@ func (o *Output) emitURL(v any) error {
 	_, vals := flatten(v)
 	for _, k := range []string{"url", "bvid", "short_link", "id", "rpid", "term", "season_id", "room_id", "mid", "sid", "cvid", "media_id"} {
 		if s, ok := vals[k]; ok && s != "" {
-			fmt.Fprintln(o.w, s)
+			_, _ = fmt.Fprintln(o.w, s)
 			return nil
 		}
 	}
@@ -205,9 +205,9 @@ func (o *Output) Close() error {
 		return o.csvw.Error()
 	case FormatJSON:
 		if !o.jsonOpen {
-			io.WriteString(o.w, "[]\n")
+			_, _ = io.WriteString(o.w, "[]\n")
 		} else {
-			io.WriteString(o.w, "\n]\n")
+			_, _ = io.WriteString(o.w, "\n]\n")
 		}
 	}
 	return nil
@@ -218,7 +218,7 @@ func flatten(v any) ([]string, map[string]string) {
 	vals := map[string]string{}
 	var keys []string
 	rv := reflect.ValueOf(v)
-	for rv.Kind() == reflect.Ptr {
+	for rv.Kind() == reflect.Pointer {
 		rv = rv.Elem()
 	}
 	if rv.Kind() != reflect.Struct {
@@ -309,6 +309,6 @@ func yamlVal(s string) string {
 func toMap(v any) map[string]any {
 	b, _ := json.Marshal(v)
 	m := map[string]any{}
-	json.Unmarshal(b, &m)
+	_ = json.Unmarshal(b, &m)
 	return m
 }

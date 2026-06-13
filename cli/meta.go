@@ -169,7 +169,7 @@ func newCrawlCmd(a *App) *cobra.Command {
 		Use:     "crawl <id|url>...",
 		Short:   "Crawl connected records from seed ids into JSONL files",
 		Args:    cobra.MinimumNArgs(1),
-		Example: "  bili crawl BV1GJ411x7h7 --out ./data\n  bili search lofi -o url | bili crawl - --out ./data --comments",
+		Example: "  bili crawl BV17x411w7KC --out ./data\n  bili search lofi -o url | bili crawl - --out ./data --comments",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if outDir == "" {
 				outDir = "."
@@ -181,13 +181,13 @@ func newCrawlCmd(a *App) *cobra.Command {
 			seeds := readArgsOrStdin(args)
 
 			vw := newJSONLWriter(filepath.Join(outDir, "videos.jsonl"))
-			defer vw.Close()
+			defer func() { _ = vw.Close() }()
 			uw := newJSONLWriter(filepath.Join(outDir, "users.jsonl"))
-			defer uw.Close()
+			defer func() { _ = uw.Close() }()
 			cw := newJSONLWriter(filepath.Join(outDir, "comments.jsonl"))
-			defer cw.Close()
+			defer func() { _ = cw.Close() }()
 			dw := newJSONLWriter(filepath.Join(outDir, "danmaku.jsonl"))
-			defer dw.Close()
+			defer func() { _ = dw.Close() }()
 
 			seenUser := map[int64]bool{}
 			for _, seed := range seeds {
