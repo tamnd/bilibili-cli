@@ -13,10 +13,10 @@ type sample struct {
 	URL   string `json:"url"`
 }
 
-func render(t *testing.T, format Format, fields []string, recs ...any) string {
+func renderOut(t *testing.T, format Format, fields []string, recs ...any) string {
 	t.Helper()
 	var buf bytes.Buffer
-	o, err := NewOutput(&buf, format, fields, false, "")
+	o, err := NewOutput(&buf, format, fields, false, "", false, false, 0)
 	if err != nil {
 		t.Fatalf("NewOutput: %v", err)
 	}
@@ -32,7 +32,7 @@ func render(t *testing.T, format Format, fields []string, recs ...any) string {
 }
 
 func TestJSONLOneRecordPerLine(t *testing.T) {
-	out := render(t, FormatJSONL, nil,
+	out := renderOut(t, FormatJSONL, nil,
 		sample{BVID: "BV1", Title: "a", Views: 1},
 		sample{BVID: "BV2", Title: "b", Views: 2},
 	)
@@ -46,21 +46,21 @@ func TestJSONLOneRecordPerLine(t *testing.T) {
 }
 
 func TestJSONArray(t *testing.T) {
-	out := render(t, FormatJSON, nil, sample{BVID: "BV1"})
+	out := renderOut(t, FormatJSON, nil, sample{BVID: "BV1"})
 	if !strings.HasPrefix(strings.TrimSpace(out), "[") || !strings.HasSuffix(strings.TrimSpace(out), "]") {
 		t.Fatalf("json output is not an array: %q", out)
 	}
 }
 
 func TestJSONEmptyIsEmptyArray(t *testing.T) {
-	out := strings.TrimSpace(render(t, FormatJSON, nil))
+	out := strings.TrimSpace(renderOut(t, FormatJSON, nil))
 	if out != "[]" {
 		t.Fatalf("empty json = %q, want []", out)
 	}
 }
 
 func TestCSVHeaderAndFields(t *testing.T) {
-	out := render(t, FormatCSV, []string{"bvid", "title"}, sample{BVID: "BV1", Title: "hi", Views: 9})
+	out := renderOut(t, FormatCSV, []string{"bvid", "title"}, sample{BVID: "BV1", Title: "hi", Views: 9})
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if lines[0] != "bvid,title" {
 		t.Fatalf("header = %q, want bvid,title", lines[0])
@@ -71,14 +71,14 @@ func TestCSVHeaderAndFields(t *testing.T) {
 }
 
 func TestURLFormatPicksURLField(t *testing.T) {
-	out := strings.TrimSpace(render(t, FormatURL, nil, sample{BVID: "BV1", URL: "https://x/BV1"}))
+	out := strings.TrimSpace(renderOut(t, FormatURL, nil, sample{BVID: "BV1", URL: "https://x/BV1"}))
 	if out != "https://x/BV1" {
 		t.Fatalf("url output = %q, want the url field", out)
 	}
 }
 
 func TestTSVUsesTabs(t *testing.T) {
-	out := render(t, FormatTSV, []string{"bvid", "title"}, sample{BVID: "BV1", Title: "hi"})
+	out := renderOut(t, FormatTSV, []string{"bvid", "title"}, sample{BVID: "BV1", Title: "hi"})
 	if !strings.Contains(out, "BV1\thi") {
 		t.Fatalf("tsv row not tab-separated: %q", out)
 	}
