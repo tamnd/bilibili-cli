@@ -24,7 +24,8 @@ func newVersionCmd(a *App) *cobra.Command {
 				return nil
 			}
 			info := map[string]string{"version": Version, "commit": Commit, "date": Date}
-			if a.resolveFormat() == FormatTable {
+			f := a.resolveFormat()
+			if f == FormatTable || f == FormatAuto || f == FormatList {
 				fmt.Printf("bili %s (%s) built %s\n", Version, Commit, Date)
 				return nil
 			}

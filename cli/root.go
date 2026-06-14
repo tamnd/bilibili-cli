@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/term"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"github.com/tamnd/bilibili-cli/bili"
@@ -72,7 +73,7 @@ func Root() *cobra.Command {
 	}
 
 	pf := root.PersistentFlags()
-	pf.StringVarP(&app.output, "output", "o", "auto", "table|json|jsonl|csv|tsv|yaml|url|raw")
+	pf.StringVarP(&app.output, "output", "o", "auto", "list|table|markdown|json|jsonl|csv|tsv|url|raw")
 	pf.StringVar(&app.fields, "fields", "", "comma-separated columns to keep/order")
 	pf.BoolVar(&app.noHeader, "no-header", false, "omit the header row")
 	pf.StringVar(&app.template, "template", "", "Go text/template applied per record")
@@ -185,7 +186,7 @@ func parseCookieFile(s string) string {
 	return strings.Join(parts, "; ")
 }
 
-// resolveFormat turns "auto" into table (tty) or jsonl (pipe).
+// resolveFormat resolves "auto" to the right format, respecting BILI_OUTPUT.
 func (a *App) resolveFormat() Format {
 	f := a.output
 	if v := os.Getenv("BILI_OUTPUT"); v != "" && f == "auto" {
@@ -194,13 +195,19 @@ func (a *App) resolveFormat() Format {
 	if a.raw {
 		return FormatRaw
 	}
-	if Format(f) == FormatAuto || f == "" {
-		if isatty.IsTerminal(os.Stdout.Fd()) {
-			return FormatTable
-		}
-		return FormatJSONL
-	}
 	return Format(f)
+}
+
+// resolveColor returns true when ANSI color should be emitted.
+func (a *App) resolveColor() bool {
+	switch a.color {
+	case "always":
+		return true
+	case "never":
+		return false
+	default:
+		return isatty.IsTerminal(os.Stdout.Fd())
+	}
 }
 
 // newOutput builds the configured Output writer.
@@ -212,12 +219,28 @@ func (a *App) newOutput() (*Output, error) {
 			fields[i] = strings.TrimSpace(fields[i])
 		}
 	}
-	out, err := NewOutput(os.Stdout, a.resolveFormat(), fields, a.noHeader, a.template)
+	isTTY := isatty.IsTerminal(os.Stdout.Fd())
+	out, err := NewOutput(os.Stdout, a.resolveFormat(), fields, a.noHeader, a.template, isTTY, a.resolveColor(), termWidth())
 	if err != nil {
 		return nil, err
 	}
 	out.suppress = a.dryRun
 	return out, nil
+}
+
+// termWidth reports the terminal column count, or 0 when stdout is not a
+// terminal. The renderer uses it to shrink a too-wide table; 0 means no limit.
+func termWidth() int {
+	if v := os.Getenv("COLUMNS"); v != "" {
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
+			return n
+		}
+	}
+	if w, _, err := term.GetSize(os.Stdout.Fd()); err == nil && w > 0 {
+		return w
+	}
+	return 0
 }
 
 func (a *App) progress(format string, args ...any) {

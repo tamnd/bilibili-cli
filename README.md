@@ -82,8 +82,9 @@ bili bangumi ss12548                       # an anime season
 bili rank --partition dance                # dance leaderboard
 ```
 
-Records come out as a table (the default on a terminal), JSON, JSONL, CSV, TSV,
-url, or raw:
+Records come out as a table (the default on a terminal), list, markdown, JSON,
+JSONL, CSV, TSV, url, or raw. The table uses rounded borders and a colored
+header on a true-color terminal; JSON and JSONL are syntax-highlighted too:
 
 ```bash
 bili video BV17x411w7KC --fields bvid,title,view_count,like_count -o table
@@ -103,7 +104,7 @@ bili search 'lofi' -n 20 -o url \
 ### Global flags
 
 ```
--o, --output       table|json|jsonl|csv|tsv|yaml|url|raw   (auto: table on a TTY, jsonl when piped)
+-o, --output       list|table|markdown|json|jsonl|csv|tsv|url|raw   (auto: table on a TTY, jsonl when piped)
     --fields       comma-separated columns to keep, in order
     --no-header    omit the header row
     --template     Go text/template applied per record
@@ -187,7 +188,7 @@ Requires Go 1.23+.
 Push a version tag and GitHub Actions runs GoReleaser:
 
 ```bash
-git tag -a v0.2.0 -m "v0.2.0"
+git tag -a v0.1.1 -m "v0.1.1"
 git push --tags
 ```
 
