@@ -188,7 +188,7 @@ Requires Go 1.23+.
 Push a version tag and GitHub Actions runs GoReleaser:
 
 ```bash
-git tag -a v0.2.0 -m "v0.2.0"
+git tag -a v0.1.1 -m "v0.1.1"
 git push --tags
 ```
 
