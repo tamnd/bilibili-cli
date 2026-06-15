@@ -17,6 +17,7 @@ that compose.
 bili video BV17x411w7KC              # full metadata for a video
 bili comments BV17x411w7KC -o jsonl  # every comment and reply, one per line
 bili search lofi -o url              # the watch URLs of matching videos
+bili discover BV17x411w7KC --depth 2 # walk the related graph, one node per line
 bili crawl BV17x411w7KC --out ./data # the connected graph, into JSONL files
 ```
 
@@ -35,6 +36,9 @@ nothing to sign up for. The binary is pure Go with no runtime dependencies.
   `bili danmaku` decodes the protobuf bullet-chat into plain rows.
 - **Find things.** Search videos, users, bangumi, live rooms, and articles, read
   the popular feeds, the leaderboard, and the hot-search terms.
+- **Walk the graph.** `bili discover` does a breadth-first walk from a video or
+  creator, following related videos, uploaders, and uploads, and streams one
+  record per node so you can explore or pipe it.
 - **Crawl the graph.** `bili crawl` walks outward from seed ids into per-type
   JSONL files, following related videos and optionally comments and danmaku.
 
@@ -44,6 +48,6 @@ nothing to sign up for. The binary is pure Go with no runtime dependencies.
   the mental model, then the [quick start](/getting-started/quick-start/).
 - Want to install it? See [installation](/getting-started/installation/).
 - Looking for a specific task? The [guides](/guides/) cover videos, comments and
-  danmaku, users and feeds, bangumi and audio, live rooms, finding things, and
-  crawling.
+  danmaku, users and feeds, bangumi and audio, live rooms, finding things,
+  discovering the graph, and crawling.
 - Need every flag? The [CLI reference](/reference/cli/) is the full surface.

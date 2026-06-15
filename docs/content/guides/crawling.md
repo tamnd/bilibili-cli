@@ -8,6 +8,11 @@ Every other command answers one question at a time. `crawl` is for building a
 dataset: hand it seed ids and it walks outward, writing one JSONL file per record
 type into a directory.
 
+For exploring the graph interactively rather than dumping it to disk, see
+[discovering](/guides/discovering/): `discover` does a breadth-first walk and
+streams one record per node to stdout, in any output format. Reach for
+`discover` to look around; reach for `crawl` to bulk-dump.
+
 ## The basics
 
 ```bash
