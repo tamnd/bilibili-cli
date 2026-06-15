@@ -101,6 +101,10 @@ run search-user     -- search 影视飓风 --type user -n 2 -o jsonl
 run search-bangumi  -- search 凡人修仙传 --type bangumi -n 2 -o jsonl
 run search-live     -- search 英雄联盟 --type live_room -n 2 -o jsonl
 
+# --- discover (BFS graph walk) ---
+run discover        -- discover "$BV" --depth 1 -n 5 -o jsonl
+run discover-creators -- discover "$BV" --follow creators --depth 1 -n 5 -o jsonl
+
 # --- creators ---
 run user            -- user 2 -o jsonl
 run user-stat       -- user 2 --stat -o jsonl

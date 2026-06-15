@@ -57,6 +57,7 @@ through the shared [output formatter](/reference/output/).
 
 | Command | Argument | What it does |
 |---|---|---|
+| `discover <id>...` | seeds, or `-` | Breadth-first walk from a video or creator; `--follow content\|creators\|all` or an edge list, `--depth`, `--fanout`. Aliases: `walk`, `graph` |
 | `crawl <id>...` | seeds, or `-` | Walk the graph from seeds into per-type JSONL files |
 
 ## Utility
