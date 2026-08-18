@@ -57,6 +57,13 @@ type rawReply struct {
 	Replies []rawReply `json:"replies"`
 }
 
+// The two comment endpoints. The first serves top-level comments and needs a
+// signature, the second serves the replies under one of them and does not.
+const (
+	replyMainBase = "https://api.bilibili.com/x/v2/reply/wbi/main"
+	replySubBase  = "https://api.bilibili.com/x/v2/reply/reply"
+)
+
 type rawReplyMain struct {
 	Cursor struct {
 		IsEnd bool `json:"is_end"`
@@ -68,16 +75,17 @@ type rawReplyMain struct {
 	} `json:"top"`
 }
 
-func (c *Client) replyToRecord(r rawReply, top bool) Comment {
+func (c *Client) replyToRecord(r rawReply, top bool, env *Envelope) Comment {
 	cm := Comment{
 		RpID: r.RpID, OID: r.OID, Type: r.Type, Parent: r.Parent, Root: r.Root,
 		Mid: r.Mid, Uname: r.Member.Uname, AvatarURL: r.Member.Avatar,
 		Level: r.Member.LevelInfo.Current, Content: r.Content.Message, LikeCount: r.Like,
 		ReplyCount: r.Rcount, Ctime: r.Ctime, CtimeText: fmtUnix(r.Ctime),
 		Location: r.ReplyControl.Location, IsTop: top, FetchedAt: c.fetchedAt(),
+		Envelope: env,
 	}
 	for _, sub := range r.Replies {
-		cm.Replies = append(cm.Replies, c.replyToRecord(sub, false))
+		cm.Replies = append(cm.Replies, c.replyToRecord(sub, false, env))
 	}
 	return cm
 }
@@ -99,14 +107,15 @@ func (c *Client) Comments(ctx context.Context, idOrURL string, opt CommentOption
 		for {
 			p := vals("oid", itoa(oid), "type", fmt.Sprint(typ), "mode", fmt.Sprint(mode), "next", fmt.Sprint(next))
 			var r rawReplyMain
-			if err := c.getJSONSigned(ctx, "https://api.bilibili.com/x/v2/reply/wbi/main", p, &r); err != nil {
+			pageEnv, err := c.getJSONSignedEnv(ctx, replyMainBase, p, &r)
+			if err != nil {
 				yield(Comment{}, err)
 				return
 			}
 			if next == 0 && r.Top.Upper != nil && r.Top.Upper.RpID != 0 {
-				rec := c.replyToRecord(*r.Top.Upper, true)
+				rec := c.replyToRecord(*r.Top.Upper, true, pageEnv.clone())
 				if opt.Replies && rec.ReplyCount > len(rec.Replies) {
-					rec.Replies = c.allReplies(ctx, oid, typ, rec.RpID)
+					rec.Replies = c.allReplies(ctx, oid, typ, rec.RpID, rec.Envelope)
 				}
 				if !yield(rec, nil) {
 					return
@@ -120,9 +129,9 @@ func (c *Client) Comments(ctx context.Context, idOrURL string, opt CommentOption
 				return
 			}
 			for _, rr := range r.Replies {
-				rec := c.replyToRecord(rr, false)
+				rec := c.replyToRecord(rr, false, pageEnv.clone())
 				if opt.Replies && rec.ReplyCount > len(rec.Replies) {
-					rec.Replies = c.allReplies(ctx, oid, typ, rec.RpID)
+					rec.Replies = c.allReplies(ctx, oid, typ, rec.RpID, rec.Envelope)
 				}
 				if !yield(rec, nil) {
 					return
@@ -141,7 +150,12 @@ func (c *Client) Comments(ctx context.Context, idOrURL string, opt CommentOption
 }
 
 // allReplies pages through every reply under a root comment.
-func (c *Client) allReplies(ctx context.Context, oid int64, typ int, root int64) []Comment {
+//
+// A refusal part way through leaves the replies it already has rather than
+// throwing them away, which means the list can be shorter than reply_count
+// says. That is worth recording on the comment that owns them: a thread with
+// three of its eleven replies looks exactly like a thread with three replies.
+func (c *Client) allReplies(ctx context.Context, oid int64, typ int, root int64, env *Envelope) []Comment {
 	var out []Comment
 	pn := 1
 	for {
@@ -154,11 +168,12 @@ func (c *Client) allReplies(ctx context.Context, oid int64, typ int, root int64)
 				Size  int `json:"size"`
 			} `json:"page"`
 		}
-		if err := c.getJSON(ctx, "https://api.bilibili.com/x/v2/reply/reply", p, &r); err != nil {
+		if err := c.getJSON(ctx, replySubBase, p, &r); err != nil {
+			env.miss("replies", refusalNote(err))
 			return out
 		}
 		for _, rr := range r.Replies {
-			out = append(out, c.replyToRecord(rr, false))
+			out = append(out, c.replyToRecord(rr, false, env))
 		}
 		if len(r.Replies) == 0 || pn*r.Page.Size >= r.Page.Count {
 			return out

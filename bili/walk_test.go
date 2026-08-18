@@ -95,7 +95,7 @@ func newFakeGraph() *fakeGraph {
 			"BV_TURING": vid("BV_TURING", 2, "Creator A", "On Computable Numbers"),
 		},
 		users: map[string]*User{
-			"2": {Mid: 2, Name: "Creator A", FollowerCount: 1000},
+			"2": {Mid: 2, Name: "Creator A", FollowerCount: i64(1000)},
 		},
 		related: map[string][]Video{
 			"BV_TURING": {vid("BV_REL1", 3, "Creator B", "Related one"), vid("BV_REL2", 2, "Creator A", "Related two")},

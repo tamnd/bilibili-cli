@@ -6,6 +6,16 @@ import (
 	"iter"
 )
 
+// The discovery endpoints. Trending has two of them because the signed one is
+// the current path and the unsigned one still answers when signing fails.
+const (
+	popularBase     = "https://api.bilibili.com/x/web-interface/popular"
+	weeklyBase      = "https://api.bilibili.com/x/web-interface/popular/series/one"
+	rankingBase     = "https://api.bilibili.com/x/web-interface/ranking/v2"
+	searchSquareWBI = "https://api.bilibili.com/x/web-interface/wbi/search/square"
+	searchSquare    = "https://api.bilibili.com/x/web-interface/search/square"
+)
+
 type rawPopItem struct {
 	BVID     string `json:"bvid"`
 	AID      int64  `json:"aid"`
@@ -32,7 +42,7 @@ type rawPopItem struct {
 	} `json:"stat"`
 }
 
-func (c *Client) popToRecord(p rawPopItem) Video {
+func (c *Client) popToRecord(p rawPopItem, env *Envelope) Video {
 	return Video{
 		BVID: p.BVID, AID: p.AID, CID: p.CID, Title: p.Title, Description: p.Desc,
 		OwnerMid: p.Owner.Mid, OwnerName: p.Owner.Name, TypeID: p.Tid, TypeName: p.Tname,
@@ -42,6 +52,7 @@ func (c *Client) popToRecord(p rawPopItem) Video {
 		PubdateText: fmtUnix(p.Pubdate), CoverURL: p.Pic,
 		URL:       "https://www.bilibili.com/video/" + p.BVID,
 		FetchedAt: c.fetchedAt(),
+		Envelope:  env,
 	}
 }
 
@@ -62,7 +73,8 @@ func (c *Client) Popular(ctx context.Context, opt ListOptions) iter.Seq2[Video, 
 				List   []rawPopItem `json:"list"`
 				NoMore bool         `json:"no_more"`
 			}
-			if err := c.getJSON(ctx, "https://api.bilibili.com/x/web-interface/popular", vals("pn", fmt.Sprint(page), "ps", fmt.Sprint(ps)), &r); err != nil {
+			env, err := c.getJSONEnv(ctx, popularBase, vals("pn", fmt.Sprint(page), "ps", fmt.Sprint(ps)), false, &r)
+			if err != nil {
 				yield(Video{}, err)
 				return
 			}
@@ -70,7 +82,7 @@ func (c *Client) Popular(ctx context.Context, opt ListOptions) iter.Seq2[Video, 
 				return
 			}
 			for _, it := range r.List {
-				if !yield(c.popToRecord(it), nil) {
+				if !yield(c.popToRecord(it, env), nil) {
 					return
 				}
 				emitted++
@@ -91,12 +103,13 @@ func (c *Client) Weekly(ctx context.Context, number int) ([]Video, error) {
 	var r struct {
 		List []rawPopItem `json:"list"`
 	}
-	if err := c.getJSON(ctx, "https://api.bilibili.com/x/web-interface/popular/series/one", vals("number", fmt.Sprint(number)), &r); err != nil {
+	env, err := c.getJSONEnv(ctx, weeklyBase, vals("number", fmt.Sprint(number)), false, &r)
+	if err != nil {
 		return nil, err
 	}
 	out := make([]Video, 0, len(r.List))
 	for _, it := range r.List {
-		out = append(out, c.popToRecord(it))
+		out = append(out, c.popToRecord(it, env))
 	}
 	return out, nil
 }
@@ -110,18 +123,24 @@ func (c *Client) Ranking(ctx context.Context, tid int) ([]Video, error) {
 	var r struct {
 		List []rawPopItem `json:"list"`
 	}
-	if err := c.getJSON(ctx, "https://api.bilibili.com/x/web-interface/ranking/v2", p, &r); err != nil {
+	env, err := c.getJSONEnv(ctx, rankingBase, p, false, &r)
+	if err != nil {
 		return nil, err
 	}
 	out := make([]Video, 0, len(r.List))
 	for _, it := range r.List {
-		out = append(out, c.popToRecord(it))
+		out = append(out, c.popToRecord(it, env))
 	}
 	return out, nil
 }
 
 // Trending returns the current hot search terms.
-func (c *Client) Trending(ctx context.Context, limit int) ([]string, error) {
+//
+// Two endpoints serve this, and which one answered is worth recording: the
+// signed path is the current one and the unsigned path is a survivor that still
+// answers when signing fails, so a reader looking at a stale-looking list can
+// tell which of the two it came from.
+func (c *Client) Trending(ctx context.Context, limit int) ([]Suggestion, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -133,20 +152,24 @@ func (c *Client) Trending(ctx context.Context, limit int) ([]string, error) {
 			} `json:"list"`
 		} `json:"trending"`
 	}
-	if err := c.getJSONSigned(ctx, "https://api.bilibili.com/x/web-interface/wbi/search/square", vals("limit", fmt.Sprint(limit)), &r); err != nil {
+	env, err := c.getJSONSignedEnv(ctx, searchSquareWBI, vals("limit", fmt.Sprint(limit)), &r)
+	if err != nil {
 		// fall back to the unsigned square endpoint
-		if err2 := c.getJSON(ctx, "https://api.bilibili.com/x/web-interface/search/square", vals("limit", fmt.Sprint(limit)), &r); err2 != nil {
+		fallback, err2 := c.getJSONEnv(ctx, searchSquare, vals("limit", fmt.Sprint(limit)), false, &r)
+		if err2 != nil {
 			return nil, err
 		}
+		env = fallback
+		env.miss("signed_path", refusalNote(err))
 	}
-	var out []string
+	var out []Suggestion
 	for _, t := range r.Trending.List {
 		s := t.ShowName
 		if s == "" {
 			s = t.Keyword
 		}
 		if s != "" {
-			out = append(out, s)
+			out = append(out, Suggestion{Term: s, Envelope: env})
 		}
 	}
 	return out, nil

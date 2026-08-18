@@ -585,12 +585,8 @@ func newSuggestCmd(a *App) *cobra.Command {
 	}
 }
 
-func emitTerms(a *App, terms []string) error {
-	ss := make([]bili.Suggestion, 0, len(terms))
-	for _, t := range terms {
-		ss = append(ss, bili.Suggestion{Term: t})
-	}
-	return emitAll(a, ss)
+func emitTerms(a *App, terms []bili.Suggestion) error {
+	return emitAll(a, terms)
 }
 
 // ---- streams ----

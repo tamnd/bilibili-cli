@@ -6,6 +6,16 @@ import (
 	"iter"
 )
 
+// The four endpoints a user record is assembled from. They have four different
+// gates, and which of them answered is the difference between a count that is
+// zero and a count that is unknown.
+const (
+	accInfoBase      = "https://api.bilibili.com/x/space/wbi/acc/info"
+	arcSearchBase    = "https://api.bilibili.com/x/space/wbi/arc/search"
+	relationStatBase = "https://api.bilibili.com/x/relation/stat"
+	upstatBase       = "https://api.bilibili.com/x/space/upstat"
+)
+
 type rawAccInfo struct {
 	Mid      int64  `json:"mid"`
 	Name     string `json:"name"`
@@ -29,9 +39,17 @@ type rawAccInfo struct {
 }
 
 // User fetches a creator's profile and stat.
+//
+// It is four requests behind one record. Only the first is required: acc/info
+// carries the identity, and without it there is no user to talk about. The
+// other three carry counts, they have their own gates, and any of them can
+// refuse while the other two answer. Refusing is not the same as counting zero,
+// so a count from an endpoint that said no is left out of the record entirely
+// and named in the envelope's missed map with the reason.
 func (c *Client) User(ctx context.Context, mid string) (*User, error) {
 	var info rawAccInfo
-	if err := c.getJSONSigned(ctx, "https://api.bilibili.com/x/space/wbi/acc/info", addDeviceParams(vals("mid", mid)), &info); err != nil {
+	env, err := c.getJSONSignedEnv(ctx, accInfoBase, addDeviceParams(vals("mid", mid)), &info)
+	if err != nil {
 		return nil, err
 	}
 	u := &User{
@@ -39,25 +57,53 @@ func (c *Client) User(ctx context.Context, mid string) (*User, error) {
 		Level: info.Level, TopPhotoURL: info.TopPhoto, OfficialRole: info.Official.Role,
 		OfficialTitle: info.Official.Title, VipType: info.Vip.Type, VipStatus: info.Vip.Status,
 		Birthday: info.Birthday, School: info.School.Name, FetchedAt: c.fetchedAt(),
+		Envelope: env,
 	}
-	// relation + upstat are best-effort; do not fail the whole call if missing
 	var rel struct {
 		Follower  int64 `json:"follower"`
 		Following int64 `json:"following"`
 	}
-	if err := c.getJSON(ctx, "https://api.bilibili.com/x/relation/stat", vals("vmid", mid), &rel); err == nil {
-		u.FollowerCount, u.FollowingCount = rel.Follower, rel.Following
+	if err := c.getJSON(ctx, relationStatBase, vals("vmid", mid), &rel); err != nil {
+		env.miss("follower_count", refusalNote(err))
+		env.miss("following_count", refusalNote(err))
+	} else {
+		u.FollowerCount, u.FollowingCount = &rel.Follower, &rel.Following
 	}
+
 	var up struct {
 		Archive struct {
 			View int64 `json:"view"`
 		} `json:"archive"`
 		Likes int64 `json:"likes"`
 	}
-	if err := c.getJSON(ctx, "https://api.bilibili.com/x/space/upstat", vals("mid", mid), &up); err == nil {
-		u.TotalView, u.TotalLike = up.Archive.View, up.Likes
+	if err := c.getJSON(ctx, upstatBase, vals("mid", mid), &up); err != nil {
+		env.miss("total_view", refusalNote(err))
+		env.miss("total_like", refusalNote(err))
+	} else {
+		u.TotalView, u.TotalLike = &up.Archive.View, &up.Likes
+	}
+
+	// The upload count is on none of the three endpoints above. The listing
+	// endpoint knows it, because it has to paginate by it, so the count comes
+	// from asking for the shortest page it will serve and reading the total off
+	// the response rather than off the items.
+	if n, err := c.userVideoCount(ctx, mid); err != nil {
+		env.miss("video_count", refusalNote(err))
+	} else {
+		u.VideoCount = &n
 	}
 	return u, nil
+}
+
+// userVideoCount reads a creator's total upload count from the listing
+// endpoint's own pagination total.
+func (c *Client) userVideoCount(ctx context.Context, mid string) (int64, error) {
+	p := addDeviceParams(vals("mid", mid, "pn", "1", "ps", "1", "order", "pubdate"))
+	var r rawArcSearch
+	if err := c.getJSONSigned(ctx, arcSearchBase, p, &r); err != nil {
+		return 0, err
+	}
+	return int64(r.Page.Count), nil
 }
 
 type rawArcSearch struct {
@@ -108,7 +154,8 @@ func (c *Client) UserVideos(ctx context.Context, mid string, opt ListOptions) it
 			}
 			p = addDeviceParams(p)
 			var r rawArcSearch
-			if err := c.getJSONSigned(ctx, "https://api.bilibili.com/x/space/wbi/arc/search", p, &r); err != nil {
+			env, err := c.getJSONSignedEnv(ctx, arcSearchBase, p, &r)
+			if err != nil {
 				yield(Video{}, err)
 				return
 			}
@@ -123,6 +170,7 @@ func (c *Client) UserVideos(ctx context.Context, mid string, opt ListOptions) it
 					CoverURL: v.Pic, TypeID: v.TypeID, Description: v.Desc,
 					URL:       "https://www.bilibili.com/video/" + v.BVID,
 					FetchedAt: c.fetchedAt(),
+					Envelope:  env,
 				}
 				if !yield(rec, nil) {
 					return

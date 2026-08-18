@@ -167,7 +167,7 @@ func Matrix() []Requirement {
 			Params:  vals("mid", mid),
 			Payload: true,
 			Expect:  stateRefusedSilent,
-			Note:    "answers code 0 with an empty object, signed or not. It carries a creator's view and like totals when it answers, which is why the empty object is a refusal and why bili user prints zeros today",
+			Note:    "answers code 0 with an empty object, signed or not. It carries a creator's view and like totals when it answers, which is why the empty object is a refusal. bili user used to print those totals as zero when this happened and now leaves them out and names this endpoint in the record's envelope",
 			Advice:  "The creator's view and like totals come from here and nowhere else, so they are unavailable anonymously rather than zero",
 		},
 		{

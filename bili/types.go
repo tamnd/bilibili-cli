@@ -47,6 +47,9 @@ type Video struct {
 	Pages         []Page   `json:"pages,omitempty"`
 	State         int      `json:"state"`
 	FetchedAt     string   `json:"fetched_at"`
+
+	// Envelope is where this record came from. See envelope.go.
+	Envelope *Envelope `json:"envelope,omitempty" table:"-"`
 }
 
 // Page is one part of a multi-part video.
@@ -62,25 +65,35 @@ type Page struct {
 
 // User is a creator's profile and stat.
 type User struct {
-	Mid            int64  `json:"mid"`
-	Name           string `json:"name"`
-	Sex            string `json:"sex"`
-	FaceURL        string `json:"face_url"`
-	Sign           string `json:"sign"`
-	Level          int    `json:"level"`
-	TopPhotoURL    string `json:"top_photo_url"`
-	OfficialRole   int    `json:"official_role"`
-	OfficialTitle  string `json:"official_title"`
-	VipType        int    `json:"vip_type"`
-	VipStatus      int    `json:"vip_status"`
-	Birthday       string `json:"birthday"`
-	School         string `json:"school"`
-	FollowerCount  int64  `json:"follower_count"`
-	FollowingCount int64  `json:"following_count"`
-	VideoCount     int64  `json:"video_count"`
-	TotalView      int64  `json:"total_view"`
-	TotalLike      int64  `json:"total_like"`
+	Mid           int64  `json:"mid"`
+	Name          string `json:"name"`
+	Sex           string `json:"sex"`
+	FaceURL       string `json:"face_url"`
+	Sign          string `json:"sign"`
+	Level         int    `json:"level"`
+	TopPhotoURL   string `json:"top_photo_url"`
+	OfficialRole  int    `json:"official_role"`
+	OfficialTitle string `json:"official_title"`
+	VipType       int    `json:"vip_type"`
+	VipStatus     int    `json:"vip_status"`
+	Birthday      string `json:"birthday"`
+	School        string `json:"school"`
+	// The five counts are pointers because they come from three endpoints that
+	// are not the one carrying the identity above, and any of them can refuse
+	// while the rest answer. A creator with no uploads and a creator whose
+	// upload count was withheld are different facts, and an int64 has only one
+	// way to say both of them. A nil here prints as an empty cell rather than a
+	// zero, is left out of the json entirely, and is named in the envelope's
+	// missed map with the endpoint that refused.
+	FollowerCount  *int64 `json:"follower_count,omitempty"`
+	FollowingCount *int64 `json:"following_count,omitempty"`
+	VideoCount     *int64 `json:"video_count,omitempty"`
+	TotalView      *int64 `json:"total_view,omitempty"`
+	TotalLike      *int64 `json:"total_like,omitempty"`
 	FetchedAt      string `json:"fetched_at"`
+
+	// Envelope is where this record came from. See envelope.go.
+	Envelope *Envelope `json:"envelope,omitempty" table:"-"`
 }
 
 // Comment is one comment, with nested replies when expanded.
@@ -103,6 +116,9 @@ type Comment struct {
 	IsTop      bool      `json:"is_top"`
 	Replies    []Comment `json:"replies,omitempty"`
 	FetchedAt  string    `json:"fetched_at"`
+
+	// Envelope is where this record came from. See envelope.go.
+	Envelope *Envelope `json:"envelope,omitempty" table:"-"`
 }
 
 // Danmaku is one bullet-chat line.
@@ -116,6 +132,9 @@ type Danmaku struct {
 	Pool       int32  `json:"pool"`
 	SenderHash string `json:"sender_hash"`
 	Content    string `json:"content"`
+
+	// Envelope is where this record came from. See envelope.go.
+	Envelope *Envelope `json:"envelope,omitempty" table:"-"`
 }
 
 // Dynamic is one post in a user's feed.
@@ -134,6 +153,9 @@ type Dynamic struct {
 	StatReply   int64    `json:"stat_reply"`
 	StatForward int64    `json:"stat_forward"`
 	FetchedAt   string   `json:"fetched_at"`
+
+	// Envelope is where this record came from. See envelope.go.
+	Envelope *Envelope `json:"envelope,omitempty" table:"-"`
 }
 
 // LiveRoom is a live streaming room.
@@ -153,6 +175,9 @@ type LiveRoom struct {
 	KeyframeURL    string `json:"keyframe_url"`
 	LiveStartText  string `json:"live_start_text"`
 	FetchedAt      string `json:"fetched_at"`
+
+	// Envelope is where this record came from. See envelope.go.
+	Envelope *Envelope `json:"envelope,omitempty" table:"-"`
 }
 
 // Bangumi is an anime/film season with its episodes.
@@ -176,6 +201,9 @@ type Bangumi struct {
 	StatDanmakus  int64     `json:"stat_danmakus"`
 	Episodes      []Episode `json:"episodes,omitempty"`
 	FetchedAt     string    `json:"fetched_at"`
+
+	// Envelope is where this record came from. See envelope.go.
+	Envelope *Envelope `json:"envelope,omitempty" table:"-"`
 }
 
 // Episode is one episode of a bangumi season.
@@ -208,6 +236,9 @@ type Audio struct {
 	ShareCount    int64  `json:"share_count"`
 	Ctime         int64  `json:"ctime"`
 	FetchedAt     string `json:"fetched_at"`
+
+	// Envelope is where this record came from. See envelope.go.
+	Envelope *Envelope `json:"envelope,omitempty" table:"-"`
 }
 
 // Article is a column post.
@@ -228,6 +259,9 @@ type Article struct {
 	PublishTime   int64  `json:"publish_time"`
 	ContentText   string `json:"content_text,omitempty"`
 	FetchedAt     string `json:"fetched_at"`
+
+	// Envelope is where this record came from. See envelope.go.
+	Envelope *Envelope `json:"envelope,omitempty" table:"-"`
 }
 
 // Favorite is a favorite folder.
@@ -242,6 +276,9 @@ type Favorite struct {
 	OwnerName  string `json:"owner_name"`
 	Ctime      int64  `json:"ctime"`
 	FetchedAt  string `json:"fetched_at"`
+
+	// Envelope is where this record came from. See envelope.go.
+	Envelope *Envelope `json:"envelope,omitempty" table:"-"`
 }
 
 // SearchResult is a discriminated search hit.
@@ -287,11 +324,17 @@ type Stream struct {
 	URL         string   `json:"url"`
 	BackupURLs  []string `json:"backup_urls,omitempty"`
 	DurationMs  int64    `json:"duration_ms"`
+
+	// Envelope is where this record came from. See envelope.go.
+	Envelope *Envelope `json:"envelope,omitempty" table:"-"`
 }
 
 // Suggestion is one autosuggest term.
 type Suggestion struct {
 	Term string `json:"term"`
+
+	// Envelope is where this record came from. See envelope.go.
+	Envelope *Envelope `json:"envelope,omitempty" table:"-"`
 }
 
 // ListOptions controls paged list endpoints.

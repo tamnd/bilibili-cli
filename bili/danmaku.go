@@ -12,6 +12,13 @@ import (
 	"github.com/tamnd/bilibili-cli/pkg/dmproto"
 )
 
+// The two danmaku surfaces. Neither is JSON, so both build their envelope by
+// hand rather than getting one back from getJSONEnv.
+const (
+	dmSegBase = "https://api.bilibili.com/x/v2/dm/web/seg.so"
+	dmXMLHost = "https://comment.bilibili.com"
+)
+
 // partCID returns the cid for a given 1-based part index of a video.
 func (c *Client) partCID(ctx context.Context, idOrURL string, part int) (aid, cid int64, dur int, err error) {
 	res, err := c.Video(ctx, idOrURL, VideoOptions{})
@@ -47,7 +54,7 @@ func (c *Client) Danmaku(ctx context.Context, idOrURL string, part int) iter.Seq
 		var all []Danmaku
 		for seg := 1; seg <= segments; seg++ {
 			p := vals("type", "1", "oid", itoa(cid), "pid", itoa(aid), "segment_index", strconv.Itoa(seg))
-			res, err := c.fetch(ctx, buildURL("https://api.bilibili.com/x/v2/dm/web/seg.so", p), nil)
+			res, err := c.fetch(ctx, buildURL(dmSegBase, p), nil)
 			if err != nil {
 				yield(Danmaku{}, err)
 				return
@@ -68,6 +75,7 @@ func (c *Client) Danmaku(ctx context.Context, idOrURL string, part int) iter.Seq
 				yield(Danmaku{}, apiErr)
 				return
 			}
+			env := &Envelope{Endpoint: endpointName(dmSegBase), Status: st, Fetched: c.fetchedAt(), Bytes: len(res.body)}
 			elems, err := dmproto.Decode(res.body)
 			if err != nil {
 				// an empty or short segment is not fatal; stop walking
@@ -83,7 +91,7 @@ func (c *Client) Danmaku(ctx context.Context, idOrURL string, part int) iter.Seq
 				all = append(all, Danmaku{
 					DmID: e.ID, ProgressMs: e.Progress, Mode: e.Mode, Fontsize: e.Fontsize,
 					Color: e.Color, Ctime: e.Ctime, Pool: e.Pool, SenderHash: e.MidHash,
-					Content: e.Content,
+					Content: e.Content, Envelope: env,
 				})
 			}
 		}
@@ -102,11 +110,15 @@ func (c *Client) DanmakuXML(ctx context.Context, idOrURL string, part int) ([]Da
 	if err != nil {
 		return nil, err
 	}
-	body, err := c.rawGet(ctx, fmt.Sprintf("https://comment.bilibili.com/%d.xml", cid), nil)
+	url := fmt.Sprintf("%s/%d.xml", dmXMLHost, cid)
+	body, err := c.rawGet(ctx, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	return parseDanmakuXML(body)
+	// rawGet has already turned a non-2xx into an error, so anything that got
+	// this far is an answer whatever the XML turns out to hold.
+	env := &Envelope{Endpoint: endpointName(url), Status: StatusOK, Fetched: c.fetchedAt(), Bytes: len(body)}
+	return parseDanmakuXML(body, env)
 }
 
 type xmlDoc struct {
@@ -116,7 +128,7 @@ type xmlDoc struct {
 	} `xml:"d"`
 }
 
-func parseDanmakuXML(body []byte) ([]Danmaku, error) {
+func parseDanmakuXML(body []byte, env *Envelope) ([]Danmaku, error) {
 	var doc xmlDoc
 	if err := xml.Unmarshal(body, &doc); err != nil {
 		return nil, err
@@ -126,6 +138,7 @@ func parseDanmakuXML(body []byte) ([]Danmaku, error) {
 		f := strings.Split(d.P, ",")
 		var dm Danmaku
 		dm.Content = d.Text
+		dm.Envelope = env
 		if len(f) >= 8 {
 			if sec, err := strconv.ParseFloat(f[0], 64); err == nil {
 				dm.ProgressMs = int32(sec * 1000)

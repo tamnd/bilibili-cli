@@ -5,6 +5,13 @@ import (
 	"fmt"
 )
 
+// The bangumi surface is on the pgc paths, and a media id needs one extra
+// request to become a season id.
+const (
+	reviewUserBase = "https://api.bilibili.com/pgc/review/user"
+	seasonBase     = "https://api.bilibili.com/pgc/view/web/season"
+)
+
 type rawSeason struct {
 	SeasonID int64  `json:"season_id"`
 	MediaID  int64  `json:"media_id"`
@@ -69,7 +76,7 @@ func (c *Client) Bangumi(ctx context.Context, idOrURL string) (*Bangumi, error) 
 				SeasonID int64 `json:"season_id"`
 			} `json:"media"`
 		}
-		if err := c.getJSON(ctx, "https://api.bilibili.com/pgc/review/user", vals("media_id", itoa(id.MediaID)), &mr); err != nil {
+		if err := c.getJSON(ctx, reviewUserBase, vals("media_id", itoa(id.MediaID)), &mr); err != nil {
 			return nil, err
 		}
 		p.Set("season_id", itoa(mr.Media.SeasonID))
@@ -77,7 +84,8 @@ func (c *Client) Bangumi(ctx context.Context, idOrURL string) (*Bangumi, error) 
 		return nil, fmt.Errorf("not a bangumi id: %s", idOrURL)
 	}
 	var s rawSeason
-	if err := c.getJSON(ctx, "https://api.bilibili.com/pgc/view/web/season", p, &s); err != nil {
+	env, err := c.getJSONEnv(ctx, seasonBase, p, false, &s)
+	if err != nil {
 		return nil, err
 	}
 	b := &Bangumi{
@@ -86,6 +94,7 @@ func (c *Client) Bangumi(ctx context.Context, idOrURL string) (*Bangumi, error) 
 		Evaluate: s.Evaluate, RatingScore: s.Rating.Score, RatingCount: s.Rating.Count,
 		Styles: s.Styles, PublishText: s.Publish.PubTimeShow, StatViews: s.Stat.Views,
 		StatFavorites: s.Stat.Favorites, StatDanmakus: s.Stat.Danmakus, FetchedAt: c.fetchedAt(),
+		Envelope: env,
 	}
 	if len(s.Areas) > 0 {
 		b.Area = s.Areas[0].Name

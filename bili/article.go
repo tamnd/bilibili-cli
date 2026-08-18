@@ -5,6 +5,8 @@ import (
 	"fmt"
 )
 
+const articleViewBase = "https://api.bilibili.com/x/article/view"
+
 // Article fetches a column article. When withText is set the plain-text body is
 // extracted and attached.
 func (c *Client) Article(ctx context.Context, idOrURL string, withText bool) (*Article, error) {
@@ -37,7 +39,8 @@ func (c *Client) Article(ctx context.Context, idOrURL string, withText bool) (*A
 			Coin     int64 `json:"coin"`
 		} `json:"stats"`
 	}
-	if err := c.getJSON(ctx, "https://api.bilibili.com/x/article/view", vals("id", cvid), &v); err != nil {
+	env, err := c.getJSONEnv(ctx, articleViewBase, vals("id", cvid), false, &v)
+	if err != nil {
 		return nil, err
 	}
 	a := &Article{
@@ -45,6 +48,7 @@ func (c *Client) Article(ctx context.Context, idOrURL string, withText bool) (*A
 		Summary: v.Summary, BannerURL: v.BannerURL, Words: v.Words, ViewCount: v.Stats.View,
 		LikeCount: v.Stats.Like, ReplyCount: v.Stats.Reply, FavoriteCount: v.Stats.Favorite,
 		CoinCount: v.Stats.Coin, PublishTime: v.PublishTime, FetchedAt: c.fetchedAt(),
+		Envelope: env,
 	}
 	a.CategoryName = v.Category.Name
 	if withText {

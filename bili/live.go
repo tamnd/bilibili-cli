@@ -22,6 +22,14 @@ type rawRoomInfo struct {
 	LiveTime       string `json:"live_time"`
 }
 
+// The live surface is on its own host with its own endpoints.
+const (
+	roomByUIDBase  = "https://api.live.bilibili.com/room/v2/Room/room_id_by_uid"
+	roomInfoBase   = "https://api.live.bilibili.com/room/v1/Room/get_info"
+	masterInfoBase = "https://api.live.bilibili.com/live_user/v1/Master/info"
+	roomListBase   = "https://api.live.bilibili.com/room/v3/area/getRoomList"
+)
+
 // Live fetches a live room by room id, or by uid when byUID is set.
 func (c *Client) Live(ctx context.Context, roomOrUID string, byUID bool) (*LiveRoom, error) {
 	roomID := roomOrUID
@@ -29,7 +37,7 @@ func (c *Client) Live(ctx context.Context, roomOrUID string, byUID bool) (*LiveR
 		var status struct {
 			RoomID int64 `json:"room_id"`
 		}
-		if err := c.getJSON(ctx, "https://api.live.bilibili.com/room/v2/Room/room_id_by_uid", vals("uid", roomOrUID), &status); err != nil {
+		if err := c.getJSON(ctx, roomByUIDBase, vals("uid", roomOrUID), &status); err != nil {
 			return nil, err
 		}
 		if status.RoomID != 0 {
@@ -37,7 +45,8 @@ func (c *Client) Live(ctx context.Context, roomOrUID string, byUID bool) (*LiveR
 		}
 	}
 	var ri rawRoomInfo
-	if err := c.getJSON(ctx, "https://api.live.bilibili.com/room/v1/Room/get_info", vals("room_id", roomID), &ri); err != nil {
+	env, err := c.getJSONEnv(ctx, roomInfoBase, vals("room_id", roomID), false, &ri)
+	if err != nil {
 		return nil, err
 	}
 	room := &LiveRoom{
@@ -45,7 +54,7 @@ func (c *Client) Live(ctx context.Context, roomOrUID string, byUID bool) (*LiveR
 		Title: ri.Title, AreaName: ri.AreaName, ParentAreaName: ri.ParentAreaName,
 		LiveStatus: ri.LiveStatus, Online: ri.Online, Attention: ri.Attention, Tags: ri.Tags,
 		CoverURL: ri.UserCover, KeyframeURL: ri.Keyframe, LiveStartText: ri.LiveTime,
-		FetchedAt: c.fetchedAt(),
+		FetchedAt: c.fetchedAt(), Envelope: env,
 	}
 	// the room endpoint omits the anchor name; fetch it best-effort.
 	var master struct {
@@ -53,7 +62,9 @@ func (c *Client) Live(ctx context.Context, roomOrUID string, byUID bool) (*LiveR
 			Uname string `json:"uname"`
 		} `json:"info"`
 	}
-	if err := c.getJSON(ctx, "https://api.live.bilibili.com/live_user/v1/Master/info", vals("uid", itoa(ri.UID)), &master); err == nil {
+	if err := c.getJSON(ctx, masterInfoBase, vals("uid", itoa(ri.UID)), &master); err != nil {
+		env.miss("uname", refusalNote(err))
+	} else {
 		room.Uname = master.Info.Uname
 	}
 	return room, nil
@@ -92,7 +103,8 @@ func (c *Client) BrowseLive(ctx context.Context, areaID int, opt ListOptions) it
 					Tags           string `json:"tags"`
 				} `json:"list"`
 			}
-			if err := c.getJSON(ctx, "https://api.live.bilibili.com/room/v3/area/getRoomList", p, &r); err != nil {
+			env, err := c.getJSONEnv(ctx, roomListBase, p, false, &r)
+			if err != nil {
 				yield(LiveRoom{}, err)
 				return
 			}
@@ -104,7 +116,7 @@ func (c *Client) BrowseLive(ctx context.Context, areaID int, opt ListOptions) it
 					RoomID: it.RoomID, UID: it.UID, Title: it.Title, Uname: it.Uname,
 					Online: it.Online, CoverURL: it.Cover, KeyframeURL: it.Keyframe,
 					AreaName: it.AreaName, ParentAreaName: it.ParentAreaName, Tags: it.Tags,
-					LiveStatus: 1, FetchedAt: c.fetchedAt(),
+					LiveStatus: 1, FetchedAt: c.fetchedAt(), Envelope: env,
 				}
 				if !yield(rec, nil) {
 					return

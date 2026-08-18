@@ -60,7 +60,9 @@ any more, so this needs a logged-in cookie rather than a different command
 
 Two endpoints do this today. `x/v3/fav/folder/created/list-all`, behind `bili
 favorites <mid>`, and `x/space/upstat`, which carries a creator's total views
-and likes. Both answer normally with a logged-in cookie.
+and likes. Both answer normally with a logged-in cookie. The second one does not
+produce an error of its own, because it is one part of a record the rest of
+which arrived: see "A count that came back as nothing" below.
 
 An older version of this page said an empty favorites list was the owner's
 privacy setting. That was wrong. The endpoint answers the same way for every
@@ -86,6 +88,43 @@ with nothing in it and an endpoint refusing to tell you both have no records in
 them. It is drawn from a table of which endpoints carry a payload when they
 answer, which is measured rather than assumed, and which `bili verify --live`
 re-measures weekly.
+
+## A count that came back as nothing
+
+`bili user` is four requests behind one row. `acc/info` carries the identity,
+and the follower, upload, view and like counts come from three other endpoints
+with three other gates. Any of them can refuse while the rest answer, and one of
+them refuses anonymous callers every time: `x/space/upstat`, which is where a
+creator's total views and likes live and nowhere else.
+
+Those counts used to print as `0`, which is the same lie as an empty list that
+means refused, one field down. They are now left out of the record and named in
+the envelope with what stopped them:
+
+```console
+$ bili user 946974 -o jsonl | jq '{video_count, total_view, missed: .envelope.missed}'
+{
+  "video_count": 924,
+  "total_view": null,
+  "missed": {
+    "total_like": "x/space/upstat refused_silent: code 0 with no payload",
+    "total_view": "x/space/upstat refused_silent: code 0 with no payload"
+  }
+}
+```
+
+In a table or a csv the cell is empty rather than `0`, which is the difference
+that matters when something downstream is going to sum the column. A creator
+whose totals really are zero still gets a zero.
+
+`video_count` is worth watching in that output. It comes from the listing
+endpoint's own pagination total, and `x/space/wbi/arc/search` is risk-gated
+intermittently for anonymous callers, so the same command a minute later can
+show it in `missed` instead. That is a real property of the site, and it is only
+visible because the two outcomes no longer look the same.
+
+The whole command still exits 0. A record that arrived with a field missing is
+not a failed read, and the envelope is where you go to find out what it cost.
 
 ## A feed that returns nothing
 

@@ -54,6 +54,11 @@ type rawSearchEntry struct {
 	Favorite int64 `json:"favorite"`
 }
 
+const (
+	searchTypeBase = "https://api.bilibili.com/x/web-interface/wbi/search/type"
+	suggestBase    = "https://s.search.bilibili.com/main/suggest"
+)
+
 var searchTypeMap = map[string]string{
 	"video":     "video",
 	"user":      "bili_user",
@@ -93,7 +98,8 @@ func (c *Client) Search(ctx context.Context, q string, opt SearchOptions) iter.S
 				p.Set("tids", fmt.Sprint(opt.Tid))
 			}
 			var r rawSearchType
-			if err := c.getJSONSigned(ctx, "https://api.bilibili.com/x/web-interface/wbi/search/type", p, &r); err != nil {
+			env, err := c.getJSONSignedEnv(ctx, searchTypeBase, p, &r)
+			if err != nil {
 				yield(SearchResult{}, err)
 				return
 			}
@@ -101,7 +107,7 @@ func (c *Client) Search(ctx context.Context, q string, opt SearchOptions) iter.S
 				return
 			}
 			for _, e := range r.Result {
-				res := c.entryToResult(st, e)
+				res := c.entryToResult(st, e, env)
 				if !yield(res, nil) {
 					return
 				}
@@ -118,28 +124,30 @@ func (c *Client) Search(ctx context.Context, q string, opt SearchOptions) iter.S
 	}
 }
 
-func (c *Client) entryToResult(st string, e rawSearchEntry) SearchResult {
+func (c *Client) entryToResult(st string, e rawSearchEntry, env *Envelope) SearchResult {
 	switch st {
 	case "user":
 		return SearchResult{ResultType: "user", User: &User{
 			Mid: e.Mid, Name: e.Uname, Sign: e.Usign, FaceURL: e.Upic, Level: e.Level,
-			FollowerCount: e.Fans, VideoCount: e.Videos, FetchedAt: c.fetchedAt(),
+			FollowerCount: &e.Fans, VideoCount: &e.Videos, FetchedAt: c.fetchedAt(),
+			Envelope: env,
 		}}
 	case "bangumi", "film":
 		return SearchResult{ResultType: "bangumi", Bangumi: &Bangumi{
 			SeasonID: e.SeasonID, MediaID: e.MediaID, Title: stripTags(e.Title),
 			TypeName: e.SeasonTitle, CoverURL: e.Cover, FetchedAt: c.fetchedAt(),
+			Envelope: env,
 		}}
 	case "live_room", "live":
 		return SearchResult{ResultType: "live_room", LiveRoom: &LiveRoom{
 			RoomID: e.RoomID, UID: e.UID, Uname: e.Uname, Title: stripTags(e.Title),
-			CoverURL: e.Cover, FetchedAt: c.fetchedAt(),
+			CoverURL: e.Cover, FetchedAt: c.fetchedAt(), Envelope: env,
 		}}
 	case "article":
 		return SearchResult{ResultType: "article", Article: &Article{
 			CVID: e.ID, Title: stripTags(e.Title), AuthorMid: e.Mid, AuthorName: e.Author,
 			ViewCount: e.View, LikeCount: e.Like, ReplyCount: e.Reply, FavoriteCount: e.Favorite,
-			FetchedAt: c.fetchedAt(),
+			FetchedAt: c.fetchedAt(), Envelope: env,
 		}}
 	default:
 		return SearchResult{ResultType: "video", Video: &Video{
@@ -148,7 +156,7 @@ func (c *Client) entryToResult(st string, e rawSearchEntry) SearchResult {
 			FavoriteCount: e.Favorites, ReplyCount: e.Review, Pubdate: e.Pubdate,
 			PubdateText: fmtUnix(e.Pubdate), CoverURL: fixProto(e.Pic), Description: e.Desc,
 			URL:  "https://www.bilibili.com/video/" + e.BVID,
-			Tags: splitTag(e.Tag), FetchedAt: c.fetchedAt(),
+			Tags: splitTag(e.Tag), FetchedAt: c.fetchedAt(), Envelope: env,
 		}}
 	}
 }
@@ -174,10 +182,22 @@ func splitTag(s string) []string {
 }
 
 // Suggest returns autosuggest terms for a query.
-func (c *Client) Suggest(ctx context.Context, term string) ([]string, error) {
-	body, err := c.rawGet(ctx, buildURL("https://s.search.bilibili.com/main/suggest", vals("term", term, "main_ver", "v1")), nil)
+//
+// It is on its own host and it is not an envelope-shaped response, so the
+// provenance is assembled here rather than handed back by getJSONEnv.
+func (c *Client) Suggest(ctx context.Context, term string) ([]Suggestion, error) {
+	body, err := c.rawGet(ctx, buildURL(suggestBase, vals("term", term, "main_ver", "v1")), nil)
 	if err != nil {
 		return nil, err
 	}
-	return parseSuggest(body)
+	terms, err := parseSuggest(body)
+	if err != nil {
+		return nil, err
+	}
+	env := &Envelope{Endpoint: endpointName(suggestBase), Status: StatusOK, Fetched: c.fetchedAt(), Bytes: len(body)}
+	out := make([]Suggestion, 0, len(terms))
+	for _, t := range terms {
+		out = append(out, Suggestion{Term: t, Envelope: env})
+	}
+	return out, nil
 }

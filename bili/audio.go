@@ -5,6 +5,8 @@ import (
 	"fmt"
 )
 
+const songInfoBase = "https://www.bilibili.com/audio/music-service-c/web/song/info"
+
 // Audio fetches a music track's metadata and stat.
 func (c *Client) Audio(ctx context.Context, idOrURL string) (*Audio, error) {
 	id, err := c.Resolve(ctx, idOrURL)
@@ -32,7 +34,8 @@ func (c *Client) Audio(ctx context.Context, idOrURL string) (*Audio, error) {
 			Share   int64 `json:"share"`
 		} `json:"statistic"`
 	}
-	if err := c.getJSON(ctx, "https://www.bilibili.com/audio/music-service-c/web/song/info", vals("sid", sid), &info); err != nil {
+	env, err := c.getJSONEnv(ctx, songInfoBase, vals("sid", sid), false, &info)
+	if err != nil {
 		return nil, err
 	}
 	return &Audio{
@@ -40,5 +43,6 @@ func (c *Client) Audio(ctx context.Context, idOrURL string) (*Audio, error) {
 		CoverURL: info.Cover, Intro: info.Intro, Duration: info.Duration, PlayCount: info.Statistic.Play,
 		ReplyCount: info.Statistic.Comment, FavoriteCount: info.Statistic.Collect,
 		ShareCount: info.Statistic.Share, Ctime: info.Ctime, FetchedAt: c.fetchedAt(),
+		Envelope: env,
 	}, nil
 }

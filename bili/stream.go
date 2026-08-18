@@ -5,6 +5,8 @@ import (
 	"fmt"
 )
 
+const playurlBase = "https://api.bilibili.com/x/player/wbi/playurl"
+
 var qualityName = map[int]string{
 	6: "240P", 16: "360P", 32: "480P", 64: "720P", 74: "720P60", 80: "1080P",
 	112: "1080P+", 116: "1080P60", 120: "4K", 125: "HDR", 126: "Dolby", 127: "8K",
@@ -40,21 +42,22 @@ func (c *Client) Streams(ctx context.Context, idOrURL string, part, qn int) ([]S
 			Length int64    `json:"length"`
 		} `json:"durl"`
 	}
-	if err := c.getJSONSigned(ctx, "https://api.bilibili.com/x/player/wbi/playurl", p, &r); err != nil {
+	env, err := c.getJSONSignedEnv(ctx, playurlBase, p, &r)
+	if err != nil {
 		return nil, err
 	}
 	var out []Stream
 	for _, d := range r.Dash.Video {
-		out = append(out, dashToStream(d, "video", r.Timelen))
+		out = append(out, dashToStream(d, "video", r.Timelen, env))
 	}
 	for _, d := range r.Dash.Audio {
-		out = append(out, dashToStream(d, "audio", r.Timelen))
+		out = append(out, dashToStream(d, "audio", r.Timelen, env))
 	}
 	if len(out) == 0 {
 		for _, d := range r.Durl {
 			out = append(out, Stream{
 				Quality: r.Quality, QualityText: qualityName[r.Quality], MIME: "video/flv",
-				URL: d.URL, BackupURLs: d.Backup, DurationMs: r.Timelen,
+				URL: d.URL, BackupURLs: d.Backup, DurationMs: r.Timelen, Envelope: env,
 			})
 		}
 	}
@@ -73,10 +76,10 @@ type rawDashStream struct {
 	FrameRate string   `json:"frameRate"`
 }
 
-func dashToStream(d rawDashStream, kind string, dur int64) Stream {
+func dashToStream(d rawDashStream, kind string, dur int64, env *Envelope) Stream {
 	return Stream{
 		Quality: d.ID, QualityText: qualityName[d.ID], Codecs: d.Codecs, MIME: d.MimeType,
 		Bandwidth: d.Bandwidth, Width: d.Width, Height: d.Height, FrameRate: d.FrameRate,
-		URL: d.BaseURL, BackupURLs: d.Backup, DurationMs: dur,
+		URL: d.BaseURL, BackupURLs: d.Backup, DurationMs: dur, Envelope: env,
 	}
 }
