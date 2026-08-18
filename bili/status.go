@@ -51,6 +51,13 @@ const (
 	// StatusRate is -509, or an HTTP 429.
 	StatusRate Status = "rate"
 
+	// StatusNetwork is no usable response at all: a transport failure, a
+	// timeout, or a 5xx that outlived the retries. It is not one of the seven
+	// response states because it is not a response, and it is separate from
+	// StatusError because "nothing came back" and "something came back that this
+	// client cannot name" call for different things from the person reading it.
+	StatusNetwork Status = "network"
+
 	// StatusError is not one of the seven. It is the absence of a
 	// classification: a code this client has no state for, or a body that would
 	// not parse. It is kept distinct so that "we do not recognise this" never
@@ -58,9 +65,9 @@ const (
 	StatusError Status = "error"
 )
 
-// Refused reports whether the response denied the request rather than answering
-// it. StatusEmpty is deliberately not a refusal: nothing came back because
-// there was nothing to send.
+// Refused reports whether the request went unanswered, either because it was
+// denied or because nothing usable came back. StatusEmpty is deliberately not a
+// refusal: nothing came back because there was nothing to send.
 func (s Status) Refused() bool {
 	switch s {
 	case StatusOK, StatusEmpty:
@@ -83,6 +90,8 @@ func (s Status) label() string {
 		return "forbidden"
 	case StatusNotFound:
 		return "not found"
+	case StatusNetwork:
+		return "network failure"
 	case StatusError:
 		return "unrecognised response"
 	}
@@ -100,11 +109,21 @@ func (s Status) Cacheable() bool { return !s.Refused() }
 
 // statusForCode maps an envelope code to a state, and reports whether the code
 // was one this client recognises.
+//
+// This is the only place a code becomes a state. Anything downstream that wants
+// to know what a code means asks here, so there is one table to correct when
+// the site adds a code rather than a set of switch statements that agree today.
 func statusForCode(code int) (Status, bool) {
 	switch code {
-	case -352:
+	case -352, -412:
+		// -412 is risk control, not a rate limit, whatever the number suggests.
+		// It is the envelope form of the HTTP 412 interstitial and it does not
+		// clear by retrying, which is the whole difference that matters.
 		return StatusRisk, true
-	case -403:
+	case -101, -403, 22001, 22002, 22003, 22004, 22005, 22006, 22007:
+		// -101 is "not logged in" and the 22xxx block is "comment area closed".
+		// Both are permission refusals that a caller responds to the way they
+		// respond to a -403, which is to supply a cookie or give up on that one.
 		return StatusForbidden, true
 	case -404, 62002, 62004, 4511001:
 		return StatusNotFound, true
@@ -130,6 +149,13 @@ func statusForHTTP(code int) (Status, bool) {
 		return StatusForbidden, true
 	case http.StatusNotFound:
 		return StatusNotFound, true
+	}
+	if code >= 500 {
+		// A 5xx only reaches classification after the retries are spent, since
+		// fetch asks again for as long as it is allowed to. By the time it is
+		// named here the server has failed to answer, which is the same outcome
+		// as the connection never opening.
+		return StatusNetwork, true
 	}
 	return StatusError, false
 }
@@ -190,6 +216,14 @@ func isHTML(contentType string) bool {
 func classify(res result) (Status, envelope, *APIError) {
 	var env envelope
 
+	// A dry run printed the request and invented the response. Sorting it would
+	// report on an endpoint nothing was sent to, and the payload rule in
+	// particular would call every dry run a silent refusal, since the body it
+	// invents carries no payload by design.
+	if res.dryRun {
+		return StatusEmpty, env, nil
+	}
+
 	if res.status < 200 || res.status >= 300 {
 		st, known := statusForHTTP(res.status)
 		return st, env, httpError(st, known, res)
@@ -203,7 +237,6 @@ func classify(res result) (Status, envelope, *APIError) {
 		return StatusError, env, &APIError{
 			Message:  snippet(res.body),
 			Hint:     "the response was not JSON and was not an interception either, so this client does not know what it is",
-			Kind:     ErrGeneric,
 			Status:   StatusError,
 			Endpoint: res.base,
 		}
@@ -212,11 +245,6 @@ func classify(res result) (Status, envelope, *APIError) {
 	if env.Code != 0 {
 		e := apiError(env.Code, env.Message)
 		e.Endpoint = res.base
-		if st, known := statusForCode(env.Code); known {
-			e.Status = st
-		} else {
-			e.Status = StatusError
-		}
 		return e.Status, env, e
 	}
 
@@ -262,13 +290,15 @@ func httpError(st Status, known bool, res result) *APIError {
 	}
 	switch {
 	case !known:
-		e.Hint, e.Kind = "the server answered with a status this client has no state for", ErrNetwork
+		e.Hint = "the server answered with a status this client has no state for"
 	case st == StatusRate:
-		e.Hint, e.Kind = "rate limited, slow down with --rate and retry", ErrRate
+		e.Hint = "rate limited, slow down with --rate and retry"
 	case st == StatusForbidden:
-		e.Hint, e.Kind = "access denied", ErrAccess
+		e.Hint = "access denied"
 	case st == StatusNotFound:
-		e.Hint, e.Kind = "not found or content removed", ErrNotFound
+		e.Hint = "not found or content removed"
+	case st == StatusNetwork:
+		e.Hint = "the server failed to answer and kept failing for every retry"
 	}
 	return e
 }
@@ -277,7 +307,6 @@ func riskError(res result) *APIError {
 	return &APIError{
 		Message:  "intercepted by risk control",
 		Hint:     riskHint,
-		Kind:     ErrAccess,
 		Status:   StatusRisk,
 		Endpoint: res.base,
 	}
@@ -287,7 +316,6 @@ func refusedSilentError(base string) *APIError {
 	return &APIError{
 		Message:  "code 0 with no payload",
 		Hint:     "this endpoint always carries a payload when it answers, so this is a refusal and not an empty result. It refuses anonymous callers, and only a logged-in cookie via --cookie or BILI_COOKIE changes that",
-		Kind:     ErrAccess,
 		Status:   StatusRefusedSilent,
 		Endpoint: base,
 	}

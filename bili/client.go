@@ -204,6 +204,11 @@ type result struct {
 	status      int
 	contentType string
 	base        string // endpoint without query parameters, for the payload rule
+
+	// dryRun marks a body this client synthesized rather than received. There
+	// is nothing in it to classify, and every state except empty would be a
+	// statement about a site that was never asked.
+	dryRun bool
 }
 
 // rawGet performs a GET with retries and returns the decompressed body. It is
@@ -234,7 +239,7 @@ func (c *Client) fetch(ctx context.Context, rawURL string, headers map[string]st
 	base, _, _ := strings.Cut(rawURL, "?")
 	if c.cfg.DryRun {
 		_, _ = fmt.Fprintf(dryRunOut, "GET %s\n", rawURL)
-		return result{body: dryRunBody, status: http.StatusOK, contentType: "application/json", base: base}, nil
+		return result{body: dryRunBody, status: http.StatusOK, contentType: "application/json", base: base, dryRun: true}, nil
 	}
 	var last error
 	for attempt := 0; attempt <= c.cfg.Retries; attempt++ {
@@ -313,8 +318,7 @@ func (c *Client) fetch(ctx context.Context, rawURL string, headers map[string]st
 		Code:    0,
 		Message: last.Error(),
 		Hint:    "request failed after retries",
-		Kind:    ErrNetwork,
-		Status:  StatusError,
+		Status:  StatusNetwork,
 	}
 }
 

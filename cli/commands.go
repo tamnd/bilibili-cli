@@ -20,29 +20,15 @@ func emitAll[T any](a *App, items []T) error {
 			return err
 		}
 	}
-	return out.Close()
+	if err := out.Close(); err != nil {
+		return err
+	}
+	return noResults(a, out)
 }
 
 // emitSeq writes records from an iterator (streaming) and closes the output.
 func emitSeq[T any](a *App, seq iter.Seq2[T, error]) error {
-	out, err := a.newOutput()
-	if err != nil {
-		return err
-	}
-	var seqErr error
-	for v, e := range seq {
-		if e != nil {
-			seqErr = e
-			break
-		}
-		if err := out.Emit(v); err != nil {
-			return err
-		}
-	}
-	if cerr := out.Close(); cerr != nil && seqErr == nil {
-		seqErr = cerr
-	}
-	return seqErr
+	return emitSeqFunc(a, seq, func(v T) any { return v })
 }
 
 // emitSeqFunc is emitSeq with a per-record transform, used to unwrap a wrapper
@@ -65,7 +51,70 @@ func emitSeqFunc[T any](a *App, seq iter.Seq2[T, error], fn func(T) any) error {
 	if cerr := out.Close(); cerr != nil && seqErr == nil {
 		seqErr = cerr
 	}
-	return seqErr
+	if seqErr != nil {
+		return seqErr
+	}
+	return noResults(a, out)
+}
+
+// noResults reports ErrNoResults when a command finished cleanly and wrote
+// nothing. That is a result and it gets its own exit code, so that a caller can
+// tell an empty answer from a refusal without reading the records.
+//
+// A dry run is exempt. It writes nothing by design, and reporting that as an
+// empty result would say something about the site when nothing was asked of it.
+func noResults(a *App, out *Output) error {
+	if a.dryRun || out.Records() > 0 {
+		return nil
+	}
+	return ErrNoResults
+}
+
+// runEach applies fn to every target and keeps going after a failure, because
+// one refused folder listing in five hundred is not a refused run.
+//
+// Every failure is named on stderr as it happens, and the counts follow, so a
+// run that partly worked says which part did not rather than leaving the caller
+// to diff the output against the input.
+func runEach[T any](a *App, targets []string, fn func(string) ([]T, error)) ([]T, error) {
+	var all []T
+	var failed []error
+	for _, t := range targets {
+		vs, err := fn(t)
+		if err != nil {
+			failed = append(failed, err)
+			a.progress("%s: %v", t, err)
+			continue
+		}
+		all = append(all, vs...)
+	}
+	return all, runError(a, len(targets), failed)
+}
+
+// runError reduces per-target failures into the one error that decides the exit
+// code for the run.
+//
+// A status becomes the run's exit code only when it covers every target. A run
+// that partly worked exits 0 with its counts on stderr, and a run where every
+// target failed differently exits 1, because no single status describes it and
+// picking one of them would be a guess presented as a fact.
+func runError(a *App, total int, failed []error) error {
+	if len(failed) == 0 {
+		return nil
+	}
+	a.progress("%d of %d failed", len(failed), total)
+	if len(failed) < total {
+		return nil
+	}
+	kind := bili.Kind(failed[0])
+	for _, e := range failed[1:] {
+		if bili.Kind(e) != kind {
+			// %v and not %w on purpose: wrapping would let the exit code reach
+			// through to a status that covers one target out of many.
+			return fmt.Errorf("all %d targets failed, in more than one way, the first being: %v", total, failed[0])
+		}
+	}
+	return failed[0]
 }
 
 func emitOne(a *App, v any) error {
@@ -85,50 +134,49 @@ func newVideoCmd(a *App) *cobra.Command {
 			ids := readArgsOrStdin(args)
 			c := a.Client()
 			if pages {
-				var all []bili.Page
-				for _, id := range ids {
-					ps, err := c.Pages(a.ctx(), id)
-					if err != nil {
-						return err
-					}
-					all = append(all, ps...)
+				ps, err := runEach(a, ids, func(id string) ([]bili.Page, error) {
+					return c.Pages(a.ctx(), id)
+				})
+				if err != nil {
+					return err
 				}
-				return emitAll(a, all)
+				return emitAll(a, ps)
 			}
 			if tags {
-				out, err := a.newOutput()
-				if err != nil {
-					return err
-				}
-				for _, id := range ids {
+				ts, err := runEach(a, ids, func(id string) ([]map[string]string, error) {
 					res, err := c.Video(a.ctx(), id, bili.VideoOptions{})
 					if err != nil {
-						return err
+						return nil, err
 					}
+					out := make([]map[string]string, 0, len(res.Video.Tags))
 					for _, t := range res.Video.Tags {
-						_ = out.Emit(map[string]string{"tag": t})
+						out = append(out, map[string]string{"tag": t})
 					}
-				}
-				return out.Close()
-			}
-			if related {
-				var all []bili.Video
-				for _, id := range ids {
-					rel, err := c.Related(a.ctx(), id)
-					if err != nil {
-						return err
-					}
-					all = append(all, rel...)
-				}
-				return emitAll(a, all)
-			}
-			var vids []bili.Video
-			for _, id := range ids {
-				res, err := c.Video(a.ctx(), id, bili.VideoOptions{Related: related})
+					return out, nil
+				})
 				if err != nil {
 					return err
 				}
-				vids = append(vids, res.Video)
+				return emitAll(a, ts)
+			}
+			if related {
+				rel, err := runEach(a, ids, func(id string) ([]bili.Video, error) {
+					return c.Related(a.ctx(), id)
+				})
+				if err != nil {
+					return err
+				}
+				return emitAll(a, rel)
+			}
+			vids, err := runEach(a, ids, func(id string) ([]bili.Video, error) {
+				res, err := c.Video(a.ctx(), id, bili.VideoOptions{Related: related})
+				if err != nil {
+					return nil, err
+				}
+				return []bili.Video{res.Video}, nil
+			})
+			if err != nil {
+				return err
 			}
 			return emitAll(a, vids)
 		},
@@ -538,14 +586,11 @@ func newSuggestCmd(a *App) *cobra.Command {
 }
 
 func emitTerms(a *App, terms []string) error {
-	out, err := a.newOutput()
-	if err != nil {
-		return err
-	}
+	ss := make([]bili.Suggestion, 0, len(terms))
 	for _, t := range terms {
-		_ = out.Emit(bili.Suggestion{Term: t})
+		ss = append(ss, bili.Suggestion{Term: t})
 	}
-	return out.Close()
+	return emitAll(a, ss)
 }
 
 // ---- streams ----

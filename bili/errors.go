@@ -1,6 +1,7 @@
 package bili
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -15,10 +16,10 @@ type APIError struct {
 	Code    int
 	Message string // upstream message (often Chinese)
 	Hint    string // English hint
-	Kind    ErrKind
 
 	// Status is the state the response was classified into. It is the field to
-	// branch on. Code is upstream's vocabulary and has gaps; this one does not.
+	// branch on, and the field the exit code is derived from. Code is upstream's
+	// vocabulary and has gaps; this one does not.
 	Status Status
 
 	// Endpoint is the base URL that refused, without query parameters. A user
@@ -30,15 +31,27 @@ type APIError struct {
 // a -352 or as an HTML page behind a 412.
 const riskHint = "risk control: this endpoint is gated by bilibili's anti-bot for anonymous access, supply a logged-in cookie via --cookie or BILI_COOKIE and retry"
 
-// ErrKind groups API errors so the CLI can map them to exit codes.
-type ErrKind int
+// ErrKind is the kind of a refusal, which is the state its response was sorted
+// into. The two used to be separate enums that had to be kept in agreement by
+// hand, and they drifted: an error could be ErrAccess while its response was
+// classified not_found. The kind of an error and the state of the response are
+// one fact, so they are one type, and the names below are the vocabulary for
+// callers who think of these as error kinds rather than as response states.
+type ErrKind = Status
 
 const (
-	ErrGeneric ErrKind = iota
-	ErrNotFound
-	ErrAccess
-	ErrRate
-	ErrNetwork
+	ErrRisk          = StatusRisk
+	ErrForbidden     = StatusForbidden
+	ErrEmpty         = StatusEmpty
+	ErrRefusedSilent = StatusRefusedSilent
+	ErrNetwork       = StatusNetwork
+	ErrRate          = StatusRate
+	ErrNotFound      = StatusNotFound
+
+	// ErrGeneric is a refusal this client has no state for. It is not a kind so
+	// much as the absence of one, kept distinct so that an unrecognised response
+	// is never quietly rounded down to a kind that means something.
+	ErrGeneric = StatusError
 )
 
 // Error renders the refusal.
@@ -64,41 +77,46 @@ func (e *APIError) Error() string {
 	return b.String()
 }
 
-// apiError maps a code/message into a typed error.
+// apiError maps a code and message into a typed error.
+//
+// The state comes from statusForCode, which is the one table, and this function
+// only adds the English hint. A code that statusForCode does not know is an
+// unrecognised response and says so, rather than being given a plausible state.
 func apiError(code int, message string) *APIError {
-	e := &APIError{Code: code, Message: message, Kind: ErrGeneric}
+	e := &APIError{Code: code, Message: message, Status: StatusError}
 	if st, known := statusForCode(code); known {
 		e.Status = st
-	} else {
-		e.Status = StatusError
 	}
 	switch code {
 	case -101:
-		e.Hint, e.Kind = "not logged in: this endpoint needs cookies, pass --cookie or BILI_COOKIE", ErrAccess
+		e.Hint = "not logged in: this endpoint needs cookies, pass --cookie or BILI_COOKIE"
 	case -400:
-		e.Hint = "bad request"
+		e.Hint = "bad request: an argument was not one this endpoint accepts"
 	case -403:
-		e.Hint, e.Kind = "access denied", ErrAccess
+		e.Hint = "access denied"
 	case -404, 62002, 62004:
-		e.Hint, e.Kind = "not found or content removed/invisible", ErrNotFound
+		e.Hint = "not found or content removed/invisible"
 	case 4511001:
-		e.Hint, e.Kind = "not found: this audio track does not exist or is no longer public", ErrNotFound
+		e.Hint = "audio not found or removed: this track does not exist or is no longer public"
 	case -352:
-		e.Hint, e.Kind = riskHint, ErrAccess
+		e.Hint = riskHint
 	case -412:
-		e.Hint, e.Kind = "request intercepted: rate-limited or missing WBI/UA", ErrRate
+		e.Hint = "request intercepted by risk control: retrying will not clear it, supply a logged-in cookie via --cookie or BILI_COOKIE"
 	case -509:
-		e.Hint, e.Kind = "rate limit exceeded", ErrRate
+		e.Hint = "rate limit exceeded, slow down with --rate and retry"
 	case 22001, 22002, 22003, 22004, 22005, 22006, 22007:
-		e.Hint, e.Kind = "comment area unavailable", ErrAccess
+		e.Hint = "comment area unavailable"
 	}
 	return e
 }
 
-// Kind reports the ErrKind of an error if it is an APIError.
+// Kind reports the kind of an error, which is StatusError for anything that did
+// not come from this package. It unwraps, so a caller that wrapped the error
+// with context still gets the answer.
 func Kind(err error) ErrKind {
-	if ae, ok := err.(*APIError); ok {
-		return ae.Kind
+	var ae *APIError
+	if errors.As(err, &ae) {
+		return ae.Status
 	}
 	return ErrGeneric
 }

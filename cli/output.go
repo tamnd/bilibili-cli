@@ -27,6 +27,12 @@ const (
 type Output struct {
 	r        *render.Renderer
 	suppress bool
+
+	// n counts what was written. A command that finishes without an error and
+	// without writing anything has a result to report, "there is nothing", and
+	// this is the only place that fact is known: by the time the emit helper
+	// returns, the slice or the iterator it consumed is gone.
+	n int
 }
 
 // NewOutput builds an Output. isTTY and color control ANSI emission; width is
@@ -52,7 +58,11 @@ func (o *Output) Emit(v any) error {
 	if o.suppress {
 		return nil
 	}
-	return o.r.Emit(v)
+	if err := o.r.Emit(v); err != nil {
+		return err
+	}
+	o.n++
+	return nil
 }
 
 func (o *Output) Close() error {
@@ -70,5 +80,12 @@ func (o *Output) Write(b []byte) (int, error) {
 	if o.suppress {
 		return len(b), nil
 	}
-	return o.r.Write(b)
+	n, err := o.r.Write(b)
+	if n > 0 {
+		o.n++
+	}
+	return n, err
 }
+
+// Records reports how many records were written.
+func (o *Output) Records() int { return o.n }

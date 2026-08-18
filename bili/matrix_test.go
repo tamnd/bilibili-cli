@@ -223,11 +223,15 @@ func TestHTTPStatus(t *testing.T) {
 }
 
 func TestClassifyErrReadsTheStatusNotTheDigits(t *testing.T) {
-	netErr := &APIError{Code: 0, Message: "HTTP 412 from https://api.bilibili.com/x/article/view?id=1", Kind: ErrNetwork}
+	// No Status on this one on purpose. It is the fallback path: an error that
+	// carries neither a state nor a code, only a message with the status line
+	// in it, which is what the transport paths produced before the classifier
+	// existed and can still produce when a request never reaches it.
+	netErr := &APIError{Code: 0, Message: "HTTP 412 from https://api.bilibili.com/x/article/view?id=1"}
 	if got := classifyErr(netErr); got != stateRisk {
 		t.Errorf("a 412 should be a risk state, got %s", got)
 	}
-	coded := &APIError{Code: -509, Message: "too frequent", Kind: ErrRate}
+	coded := &APIError{Code: -509, Message: "too frequent", Status: StatusRate}
 	if got := classifyErr(coded); got != stateRate {
 		t.Errorf("a -509 should be a rate state, got %s", got)
 	}
