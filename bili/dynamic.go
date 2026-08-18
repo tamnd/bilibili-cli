@@ -50,13 +50,13 @@ type rawDynItem struct {
 	Orig *rawDynItem `json:"orig"`
 }
 
-func (c *Client) dynToRecord(it rawDynItem) Dynamic {
+func (c *Client) dynToRecord(it rawDynItem, env *Envelope) Dynamic {
 	d := Dynamic{
 		ID: it.IDStr, Type: it.Type, AuthorMid: it.Modules.Author.Mid,
 		AuthorName: it.Modules.Author.Name, PubTs: int64(it.Modules.Author.PubTs),
 		PubText: it.Modules.Author.PubText, StatLike: it.Modules.Stat.Like.Count,
 		StatReply: it.Modules.Stat.Comment.Count, StatForward: it.Modules.Stat.Forward.Count,
-		FetchedAt: c.fetchedAt(),
+		FetchedAt: c.fetchedAt(), Envelope: env,
 	}
 	if it.Modules.Dynamic.Desc != nil {
 		d.Text = it.Modules.Dynamic.Desc.Text
@@ -80,6 +80,8 @@ func (c *Client) dynToRecord(it rawDynItem) Dynamic {
 	return d
 }
 
+const dynDetailBase = "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail"
+
 // Dynamic fetches one dynamic post.
 func (c *Client) Dynamic(ctx context.Context, id string) (*Dynamic, error) {
 	var r struct {
@@ -87,10 +89,11 @@ func (c *Client) Dynamic(ctx context.Context, id string) (*Dynamic, error) {
 	}
 	p := vals("id", id, "features", "itemOpusStyle", "timezone_offset", "-480",
 		"platform", "web", "gaia_source", "main_web", "web_location", "333.1330")
-	if err := c.getJSON(ctx, "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail", p, &r); err != nil {
+	env, err := c.getJSONEnv(ctx, dynDetailBase, p, false, &r)
+	if err != nil {
 		return nil, err
 	}
-	d := c.dynToRecord(r.Item)
+	d := c.dynToRecord(r.Item, env)
 	return &d, nil
 }
 
@@ -142,7 +145,8 @@ func (c *Client) Dynamics(ctx context.Context, mid string, opt ListOptions) iter
 				Offset  string       `json:"offset"`
 				Items   []rawDynItem `json:"items"`
 			}
-			if err := c.getJSONSigned(ctx, dynFeedBase, p, &r); err != nil {
+			env, err := c.getJSONSignedEnv(ctx, dynFeedBase, p, &r)
+			if err != nil {
 				yield(Dynamic{}, err)
 				return
 			}
@@ -153,7 +157,7 @@ func (c *Client) Dynamics(ctx context.Context, mid string, opt ListOptions) iter
 				return
 			}
 			for _, it := range r.Items {
-				if !yield(c.dynToRecord(it), nil) {
+				if !yield(c.dynToRecord(it, env), nil) {
 					return
 				}
 				emitted++

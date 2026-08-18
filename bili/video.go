@@ -5,6 +5,13 @@ import (
 	"fmt"
 )
 
+// The three endpoints a video record is assembled from.
+const (
+	viewBase    = "https://api.bilibili.com/x/web-interface/view"
+	tagsBase    = "https://api.bilibili.com/x/tag/archive/tags"
+	relatedBase = "https://api.bilibili.com/x/web-interface/archive/related"
+)
+
 // raw structures for /x/web-interface/view/detail
 type rawView struct {
 	BVID      string `json:"bvid"`
@@ -55,7 +62,7 @@ type rawView struct {
 	} `json:"pages"`
 }
 
-func (c *Client) videoToRecord(v rawView) Video {
+func (c *Client) videoToRecord(v rawView, env *Envelope) Video {
 	out := Video{
 		BVID: v.BVID, AID: v.AID, CID: v.CID, Title: v.Title, Description: v.Desc,
 		OwnerMid: v.Owner.Mid, OwnerName: v.Owner.Name, TypeID: v.TID, TypeName: v.Tname,
@@ -67,6 +74,7 @@ func (c *Client) videoToRecord(v rawView) Video {
 		Copyright: v.Copyright, CoverURL: v.Pic, ShortLink: v.ShortLink, State: v.State,
 		URL:       "https://www.bilibili.com/video/" + v.BVID,
 		FetchedAt: c.fetchedAt(),
+		Envelope:  env,
 	}
 	for _, p := range v.Pages {
 		out.Pages = append(out.Pages, Page{
@@ -93,11 +101,12 @@ func (c *Client) Video(ctx context.Context, idOrURL string, opt VideoOptions) (*
 	}
 	p := vals("bvid", id.BVID)
 	var v rawView
-	if err := c.getJSON(ctx, "https://api.bilibili.com/x/web-interface/view", p, &v); err != nil {
+	env, err := c.getJSONEnv(ctx, viewBase, p, false, &v)
+	if err != nil {
 		return nil, err
 	}
-	rec := c.videoToRecord(v)
-	rec.Tags = c.videoTags(ctx, id.BVID)
+	rec := c.videoToRecord(v, env)
+	rec.Tags = c.videoTags(ctx, id.BVID, env)
 
 	res := &VideoResult{Video: rec}
 	if opt.Related {
@@ -109,12 +118,16 @@ func (c *Client) Video(ctx context.Context, idOrURL string, opt VideoOptions) (*
 }
 
 // videoTags fetches the tag names for a video. Tag failures are non-fatal: the
-// core record is still returned without tags.
-func (c *Client) videoTags(ctx context.Context, bvid string) []string {
+// core record is still returned without tags, and the envelope says the tags
+// are absent because the tag endpoint refused rather than because the video has
+// none, which are two different videos as far as anybody reading the record is
+// concerned.
+func (c *Client) videoTags(ctx context.Context, bvid string, env *Envelope) []string {
 	var tags []struct {
 		TagName string `json:"tag_name"`
 	}
-	if err := c.getJSON(ctx, "https://api.bilibili.com/x/tag/archive/tags", vals("bvid", bvid), &tags); err != nil {
+	if err := c.getJSON(ctx, tagsBase, vals("bvid", bvid), &tags); err != nil {
+		env.miss("tags", refusalNote(err))
 		return nil
 	}
 	out := make([]string, 0, len(tags))
@@ -148,12 +161,13 @@ func (c *Client) Related(ctx context.Context, idOrURL string) ([]Video, error) {
 		return nil, err
 	}
 	var rel []rawView
-	if err := c.getJSON(ctx, "https://api.bilibili.com/x/web-interface/archive/related", vals("bvid", id.BVID), &rel); err != nil {
+	env, err := c.getJSONEnv(ctx, relatedBase, vals("bvid", id.BVID), false, &rel)
+	if err != nil {
 		return nil, err
 	}
 	out := make([]Video, 0, len(rel))
 	for _, r := range rel {
-		out = append(out, c.videoToRecord(r))
+		out = append(out, c.videoToRecord(r, env))
 	}
 	return out, nil
 }

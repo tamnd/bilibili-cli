@@ -6,6 +6,8 @@ import (
 	"iter"
 )
 
+const favListBase = "https://api.bilibili.com/x/v3/fav/folder/created/list-all"
+
 // Favorites lists a user's created favorite folders.
 func (c *Client) Favorites(ctx context.Context, mid string) ([]Favorite, error) {
 	var r struct {
@@ -17,14 +19,15 @@ func (c *Client) Favorites(ctx context.Context, mid string) ([]Favorite, error) 
 			MediaCount int    `json:"media_count"`
 		} `json:"list"`
 	}
-	if err := c.getJSON(ctx, "https://api.bilibili.com/x/v3/fav/folder/created/list-all", vals("up_mid", mid), &r); err != nil {
+	env, err := c.getJSONEnv(ctx, favListBase, vals("up_mid", mid), false, &r)
+	if err != nil {
 		return nil, err
 	}
 	out := make([]Favorite, 0, len(r.List))
 	for _, f := range r.List {
 		out = append(out, Favorite{
 			MediaID: f.ID, FID: f.FID, Title: f.Title, MediaCount: f.MediaCount,
-			FetchedAt: c.fetchedAt(),
+			FetchedAt: c.fetchedAt(), Envelope: env,
 		})
 	}
 	return out, nil
@@ -116,7 +119,8 @@ func (c *Client) FavoriteItems(ctx context.Context, idOrURL string, opt ListOpti
 					MediaCount int `json:"media_count"`
 				} `json:"info"`
 			}
-			if err := c.getJSON(ctx, favItemsBase, p, &r); err != nil {
+			env, err := c.getJSONEnv(ctx, favItemsBase, p, false, &r)
+			if err != nil {
 				yield(Video{}, err)
 				return
 			}
@@ -135,6 +139,7 @@ func (c *Client) FavoriteItems(ctx context.Context, idOrURL string, opt ListOpti
 					PubdateText: fmtUnix(m.Pubtime), CoverURL: m.Cover,
 					URL:       "https://www.bilibili.com/video/" + m.BVID,
 					FetchedAt: c.fetchedAt(),
+					Envelope:  env,
 				}
 				if !yield(rec, nil) {
 					return

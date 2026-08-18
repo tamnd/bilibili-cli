@@ -164,6 +164,41 @@ folder read gets a stronger signal than that: the endpoint returns the folder's
 own `media_count` alongside its contents, so a folder that says it holds 145
 items and sends none of them is a refusal on arithmetic rather than on a guess.
 
+**Provenance.** A record from `bili` is rarely one response. `bili user` is four
+requests behind one row: `acc/info` carries the identity, and the follower,
+upload, view and like counts come from three other endpoints with three other
+gates, any of which can refuse while the rest answer. Every record therefore
+carries an `envelope` saying which endpoint answered, whether the request was
+signed, what state the response was sorted into, when, and how many bytes came
+back.
+
+The field that pays for the rest is `envelope.missed`. A count that was refused
+is left out of the record entirely rather than printed as zero, and named there
+with the endpoint and the state that stopped it. A count that really is zero is
+still a zero. In a table or a csv a withheld count is an empty cell, which is
+the difference that matters when something downstream is going to do arithmetic
+on the column.
+
+```console
+$ bili user 946974 -o jsonl | jq '{video_count, total_view, missed: .envelope.missed}'
+{
+  "video_count": 924,
+  "total_view": null,
+  "missed": {
+    "total_like": "x/space/upstat refused_silent: code 0 with no payload",
+    "total_view": "x/space/upstat refused_silent: code 0 with no payload"
+  }
+}
+```
+
+Run that a second time and `video_count` may join the list: `arc/search` is
+risk-gated intermittently for anonymous callers, which is exactly the kind of
+thing a record cannot tell you when a refusal and a zero look the same.
+
+The envelope stays out of the table and the csv, because provenance is worth
+having on every record and worth a column on none of them. Ask for it by name
+with `--fields envelope` when you want to see it.
+
 **IDs.** Videos carry both an `avNNN` number and a `BV` string. `bili` converts
 between them, follows `b23.tv` short links, and classifies any id or URL you
 paste with `bili id`.

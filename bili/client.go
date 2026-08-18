@@ -372,10 +372,24 @@ func buildURL(base string, params url.Values) string {
 
 // getJSON fetches base+params, classifies the response, and decodes the payload
 // into out. It uses the on-disk cache when enabled.
+//
+// It is the form for call sites that want the payload and nothing else. Every
+// call site that builds a record wants getJSONEnv instead, which is the same
+// request with its provenance kept rather than dropped on the floor.
 func (c *Client) getJSON(ctx context.Context, base string, params url.Values, out any) error {
+	_, err := c.getJSONEnv(ctx, base, params, false, out)
+	return err
+}
+
+// getJSONEnv is getJSON with the provenance of the reading returned alongside
+// the error. The envelope is never nil, including on the error paths, because a
+// caller that wants to record why a field is missing needs somewhere to write
+// it and a refusal is exactly when that happens.
+func (c *Client) getJSONEnv(ctx context.Context, base string, params url.Values, signed bool, out any) (*Envelope, error) {
 	c.ensureBuvid(ctx)
 	full := buildURL(base, params)
 	cacheable := c.cache != nil && !c.cfg.DryRun
+	env := &Envelope{Endpoint: endpointName(base), Signed: signed, Fetched: c.fetchedAt()}
 
 	if cacheable {
 		if b, ok := c.cache.get(full); ok {
@@ -385,20 +399,23 @@ func (c *Client) getJSON(ctx context.Context, base string, params url.Values, ou
 			// the rest of the TTL.
 			st, err := decodeResult(result{body: b, status: http.StatusOK, contentType: "application/json", base: base}, out)
 			if !st.Refused() && err == nil {
-				return nil
+				env.Status, env.Bytes = st, len(b)
+				return env, nil
 			}
 		}
 	}
 
 	res, err := c.fetch(ctx, full, nil)
 	if err != nil {
-		return err
+		env.Status = StatusNetwork
+		return env, err
 	}
 	st, err := decodeResult(res, out)
+	env.Status, env.Bytes = st, len(res.body)
 	if cacheable && st.Cacheable() {
 		c.cache.put(full, res.body)
 	}
-	return err
+	return env, err
 }
 
 // getJSONNoCache always hits the network and never caches.
@@ -413,11 +430,20 @@ func (c *Client) getJSONNoCache(ctx context.Context, base string, params url.Val
 
 // getJSONSigned WBI-signs the params then behaves like getJSON.
 func (c *Client) getJSONSigned(ctx context.Context, base string, params url.Values, out any) error {
+	_, err := c.getJSONSignedEnv(ctx, base, params, out)
+	return err
+}
+
+// getJSONSignedEnv WBI-signs the params then behaves like getJSONEnv.
+func (c *Client) getJSONSignedEnv(ctx context.Context, base string, params url.Values, out any) (*Envelope, error) {
 	signed, err := c.signWBI(ctx, params)
 	if err != nil {
-		return err
+		// The signature comes from a separate request to nav, and failing to
+		// get one means this endpoint was never asked. Saying so is worth more
+		// than an envelope that implies it answered.
+		return &Envelope{Endpoint: endpointName(base), Signed: true, Status: StatusNetwork, Fetched: c.fetchedAt()}, err
 	}
-	return c.getJSON(ctx, base, signed, out)
+	return c.getJSONEnv(ctx, base, signed, true, out)
 }
 
 // decodeResult classifies res and, only if it answered, decodes the payload

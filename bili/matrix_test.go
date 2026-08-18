@@ -98,8 +98,37 @@ func TestEveryFetchedEndpointIsInTheMatrix(t *testing.T) {
 	}
 }
 
+// TestTheClientWalkFindsTheEndpoints guards the two tests above against their
+// own machinery. Both of them iterate over what clientSigningDecisions returns
+// and report what they find there, so a walk that resolves nothing reports
+// nothing and reads exactly like a pass.
+//
+// That is not hypothetical. The walk originally read only string literals in
+// the call, and when the endpoint URLs moved into package level constants it
+// went from two dozen endpoints to one, with both tests still green.
+func TestTheClientWalkFindsTheEndpoints(t *testing.T) {
+	found := clientSigningDecisions(t)
+	if len(found) < 20 {
+		t.Fatalf("the walk resolved %d endpoints, which is too few to be reading the client", len(found))
+	}
+
+	// Resolving them is half of it. The claim these tests make is about the
+	// signature, so the walk has to get that right in both directions, and
+	// these two rows are the ones it is easiest to be wrong about.
+	if signed, ok := found[replyMainBase]; !ok || !signed {
+		t.Errorf("the walk has %s as signed=%v seen=%v, and it is fetched signed", replyMainBase, signed, ok)
+	}
+	if signed, ok := found[viewBase]; !ok || signed {
+		t.Errorf("the walk has %s as signed=%v seen=%v, and it is fetched unsigned", viewBase, signed, ok)
+	}
+}
+
 // clientSigningDecisions walks bili/*.go and reports, for every endpoint the
-// client fetches through a string literal, whether it goes out signed.
+// client fetches, whether it goes out signed.
+//
+// Endpoint URLs are package level constants rather than literals in the call,
+// so an identifier argument is resolved through those constants before the
+// walk gives up on it.
 func clientSigningDecisions(t *testing.T) map[string]bool {
 	t.Helper()
 
@@ -108,8 +137,10 @@ func clientSigningDecisions(t *testing.T) map[string]bool {
 		t.Fatalf("glob: %v", err)
 	}
 
-	out := map[string]bool{}
+	// Parse everything first, so every constant is known before any call is
+	// resolved. A constant is as likely to be declared after its use as before.
 	fset := token.NewFileSet()
+	var parsed []*ast.File
 	for _, name := range files {
 		if strings.HasSuffix(name, "_test.go") {
 			continue
@@ -118,6 +149,47 @@ func clientSigningDecisions(t *testing.T) map[string]bool {
 		if err != nil {
 			t.Fatalf("parse %s: %v", name, err)
 		}
+		parsed = append(parsed, f)
+	}
+
+	consts := map[string]string{}
+	for _, f := range parsed {
+		for _, decl := range f.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, name := range vs.Names {
+					if i >= len(vs.Values) {
+						continue
+					}
+					if v, ok := stringLiteral(vs.Values[i]); ok {
+						consts[name.Name] = v
+					}
+				}
+			}
+		}
+	}
+
+	base := func(e ast.Expr) (string, bool) {
+		if v, ok := stringLiteral(e); ok {
+			return v, true
+		}
+		id, ok := e.(*ast.Ident)
+		if !ok {
+			return "", false
+		}
+		v, ok := consts[id.Name]
+		return v, ok
+	}
+
+	out := map[string]bool{}
+	for _, f := range parsed {
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
@@ -129,36 +201,36 @@ func clientSigningDecisions(t *testing.T) map[string]bool {
 			}
 			var signed bool
 			switch sel.Sel.Name {
-			case "getJSON", "getJSONNoCache":
-			case "getJSONSigned":
+			case "getJSON", "getJSONNoCache", "getJSONEnv":
+			case "getJSONSigned", "getJSONSignedEnv":
 				signed = true
 			default:
 				return true
 			}
-			// getJSON(ctx, base, params, out): the base is the second argument.
+			// Every one of these takes the endpoint as its second argument.
 			if len(call.Args) < 2 {
 				return true
 			}
-			lit, ok := call.Args[1].(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
-				return true
-			}
-			base, err := strconv.Unquote(lit.Value)
-			if err != nil {
+			url, ok := base(call.Args[1])
+			if !ok {
 				return true
 			}
 			// A signed call anywhere wins. An endpoint reached both ways is
 			// itself a bug, and the matrix comparison will surface it.
-			if signed || !out[base] {
-				out[base] = signed || out[base]
-			}
-			if _, seen := out[base]; !seen {
-				out[base] = signed
-			}
+			out[url] = out[url] || signed
 			return true
 		})
 	}
 	return out
+}
+
+func stringLiteral(e ast.Expr) (string, bool) {
+	lit, ok := e.(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
+	}
+	s, err := strconv.Unquote(lit.Value)
+	return s, err == nil
 }
 
 func TestClassifyCode(t *testing.T) {

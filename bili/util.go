@@ -13,6 +13,10 @@ func (c *Client) fetchedAt() string {
 	return c.now().UTC().Format(time.RFC3339)
 }
 
+// i64 is the address of a count, for the fields that use a nil to mean the
+// endpoint that carries them refused to say.
+func i64(v int64) *int64 { return &v }
+
 // flexInt64 unmarshals from either a JSON number or a JSON string. Several
 // bilibili fields (e.g. dynamic pub_ts) are inconsistently typed across items.
 type flexInt64 int64

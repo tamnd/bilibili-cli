@@ -58,8 +58,50 @@ keys, capitalised:
 
 ```bash
 bili search lofi --template '{{.BVID}} {{.Title}}'
-bili video BVID --template '{{.Title}} — {{.ViewCount}} views'
+bili video BVID --template '{{.Title}} has {{.ViewCount}} views'
 ```
+
+## The envelope
+
+Every record carries an `envelope` describing the reading rather than the thing
+read: which endpoint answered, whether the request was signed, what state the
+response was sorted into, when, and the size of the body it came out of.
+
+```bash
+bili user 946974 -o jsonl | jq .envelope
+```
+
+It is hidden from `table` and `csv` by default, because provenance is worth
+having on every record and worth a column on none of them. Ask for it by name
+when you want it:
+
+```bash
+bili user 946974 -o table --fields name,envelope
+```
+
+### Fields that are not there
+
+`envelope.missed` names the fields the record does not carry and says why for
+each. This matters most on `bili user`, which is four requests behind one row:
+the identity comes from one endpoint and the counts come from three others, and
+any of them can refuse while the rest answer.
+
+A refused count is left out of the record rather than printed as zero. In JSON
+the key is simply absent; in a table or a csv the cell is empty. A count that
+really is zero is still a zero, which is the whole point of the distinction.
+
+```console
+$ bili user 946974 -o csv --fields name,follower_count,total_view
+name,follower_count,total_view
+影视飓风,17140391,
+
+$ bili user 946974 -o jsonl | jq '.envelope.missed.total_view'
+"x/space/upstat refused_silent: code 0 with no payload"
+```
+
+An absent field with no entry in `missed` was absent because there was nothing
+to put in it. An absent field with an entry was stopped by something, and the
+entry is what stopped it.
 
 ## Why auto-detection helps
 
