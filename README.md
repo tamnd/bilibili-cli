@@ -18,7 +18,7 @@ key, no login.
 It talks to the public bilibili web endpoints over plain HTTPS: WBI signing,
 anonymous `buvid` session bootstrap, `{code, message, data}` envelope
 unwrapping, av/BV id conversion, and protobuf danmaku decoding are all handled
-for you. A cookie is optional — pass `--cookie` and `bili` reaches the same data
+for you. A cookie is optional: pass `--cookie` and `bili` reaches the same data
 your logged-in browser sees.
 
 `bili` is an independent tool. It is not affiliated with bilibili.
@@ -64,6 +64,7 @@ Shell completion is built in: `bili completion bash|zsh|fish|powershell`.
 | `bili id <thing>` | classify and normalize any id or URL |
 | `bili crawl <id\|url>...` | crawl connected records from seed ids into JSONL files |
 | `bili nav` | login state and current WBI keys (debug) |
+| `bili verify --live` | re-measure the endpoint requirement matrix against the live API |
 | `bili config show` | resolved configuration and paths |
 | `bili cache path\|info\|clear` | inspect or clear the on-disk cache |
 | `bili version` | print version, commit, and build date |
@@ -129,12 +130,19 @@ bili search 'lofi' -n 20 -o url \
 bilibili's public API is behind a few shared conventions. `bili` handles them so
 you do not have to:
 
-**WBI signing.** Many endpoints reject unsigned requests. `bili` fetches the
+**WBI signing.** Some endpoints reject unsigned requests. `bili` fetches the
 current WBI key pair from the nav endpoint, derives the mixin key, and signs
 each call with `w_rid` and `wts`.
 
+Which endpoints those are is a measured fact, not a rule you can read off the
+URL: `x/web-interface/wbi/search/type` has `wbi` in its path and needs no
+signature at all. `bili/matrix.go` records what each endpoint was measured to
+need, and `bili verify --live` re-measures it.
+
 **Anonymous session.** `bili` activates a fresh `buvid3`/`buvid4` pair on first
-use so endpoints that expect a browser session answer normally.
+use so endpoints that expect a browser session answer normally. This is a gate
+in its own right and separate from signing: `bili rank` sends no signature and
+works, and refuses without the buvid cookies.
 
 **The envelope.** Responses arrive as `{code, message, ttl, data}` (or `result`
 for bangumi endpoints). `bili` unwraps it and maps bilibili's risk-control codes
@@ -181,7 +189,14 @@ make vet     # go vet ./...
 make smoke   # build + live smoke script
 ```
 
-Requires Go 1.23+.
+Requires Go 1.26+.
+
+The test suite runs entirely offline and always will: responses are stored
+captures served by an `httptest` server. The one thing that cannot be checked
+offline is whether bilibili still behaves the way this repository believes, and
+that is what `bili verify --live` is for. It is not part of `go test`, because a
+test suite that reaches the network fails on a train. The `drift` workflow runs
+it once a week and opens an issue when a row moves.
 
 ## Releasing
 
