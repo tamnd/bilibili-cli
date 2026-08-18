@@ -84,6 +84,29 @@ show` prints the resolved paths and settings. `--dry-run` prints the exact
 requests a command would make without sending them, which is the quickest way to
 see what bili is about to do.
 
+## Telling the results apart in a script
+
+Every failure on this page has its own exit code, so a loop does not have to
+read stderr to know what happened:
+
+```bash
+for id in $(cat ids.txt); do
+  bili video "$id" -o jsonl >> out.jsonl
+  case $? in
+    0) ;;
+    3) echo "$id: nothing there" ;;
+    6) sleep 300 ;;          # rate limited, and this one clears by waiting
+    2) echo "risk control, get a cookie"; break ;;
+    *) echo "$id: failed" ;;
+  esac
+done
+```
+
+The full table is in the [CLI reference](/reference/cli/#exit-codes). The three
+worth branching on are 2, which says stop and get a cookie, 6, which says sleep
+and try again, and 3, which says this one is genuinely empty and the next one is
+still worth asking for.
+
 ## Checking whether the site changed
 
 What an endpoint needs in order to answer is a fact about bilibili's servers,

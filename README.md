@@ -173,12 +173,33 @@ Two importable packages ship alongside the CLI:
 
 ## Exit codes
 
+A refusal and an empty answer are different results, so they get different
+codes. A script can act on the difference without reading stderr.
+
+| Code | Meaning |
+| --- | --- |
+| 0 | it did what it was asked |
+| 1 | this tool could not do what was asked and cannot say why: a flag or argument it does not understand, a response it could not classify, or a run interrupted part way |
+| 2 | risk control refused the request, as a `-352` or an HTTP 412. Retrying will not clear it, a logged-in cookie usually will |
+| 3 | the request succeeded and there was genuinely nothing to return |
+| 4 | the API returned a success code carrying no payload, on an endpoint that always carries one. This is a refusal wearing a success code |
+| 5 | a network failure, a timeout, or a 5xx that outlived the retries |
+| 6 | rate limited: a `-509` or a 429 that outlived the retries. This one clears by waiting |
+| 7 | not found, either as a `-404` or as the private constant an endpoint uses instead |
+
+```console
+$ bili audio au1 >/dev/null; echo $?
+7
+$ bili favorites 946974 >/dev/null; echo $?
+4
+$ bili video BV1xx411c7mD --tags >/dev/null; echo $?
+3
 ```
-0  success
-1  error
-2  usage error
-3  no results
-```
+
+For a command given many identifiers the codes describe the run rather than one
+target. A failure part way through does not stop the rest, the counts go to
+stderr, and a status becomes the run's exit code only when it covers every
+target. One refused folder listing in five hundred is not a refused run.
 
 ## Development
 
@@ -200,8 +221,9 @@ make smoke   # build + live smoke script
 
 Requires Go 1.26+.
 
-The test suite runs entirely offline and always will: responses are stored
-captures served by an `httptest` server. The one thing that cannot be checked
+The test suite runs entirely offline and always will: stored captures go
+straight into the classifier, and the policy around it (caching, retries) runs
+against a stub transport. The one thing that cannot be checked
 offline is whether bilibili still behaves the way this repository believes, and
 that is what `bili verify --live` is for. It is not part of `go test`, because a
 test suite that reaches the network fails on a train. The `drift` workflow runs

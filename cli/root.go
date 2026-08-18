@@ -84,7 +84,7 @@ func Root() *cobra.Command {
 	pf.StringVar(&app.cookie, "cookie", "", "cookie header (SESSDATA=...; ...)")
 	pf.StringVar(&app.cookieFile, "cookie-file", "", "path to a cookie file")
 	pf.DurationVar(&app.rate, "rate", 350*time.Millisecond, "min delay between requests")
-	pf.IntVar(&app.retries, "retries", 4, "retry attempts on 429/-412/5xx")
+	pf.IntVar(&app.retries, "retries", 4, "retry attempts on 429 and 5xx (a risk refusal is never retried)")
 	pf.DurationVar(&app.timeout, "timeout", 30*time.Second, "per-request timeout")
 	pf.IntVarP(&app.workers, "workers", "j", 4, "concurrency for fan-out commands")
 	pf.BoolVar(&app.cache, "cache", true, "use the on-disk response cache")
@@ -129,7 +129,59 @@ func Root() *cobra.Command {
 		newCacheCmd(app),
 		newVersionCmd(app),
 	)
+	for _, sub := range root.Commands() {
+		nameFailures(sub)
+	}
 	return root
+}
+
+// nameFailures makes every command say what was asked when it fails.
+//
+// A refusal names the endpoint and what it said, and this is the third part:
+// which request this was. It is done once here rather than in thirty RunE
+// bodies, because a rule applied by hand in thirty places is a rule that is
+// applied in twenty-eight of them.
+func nameFailures(cmd *cobra.Command) {
+	for _, sub := range cmd.Commands() {
+		nameFailures(sub)
+	}
+	inner := cmd.RunE
+	if inner == nil {
+		return
+	}
+	cmd.RunE = func(c *cobra.Command, args []string) error {
+		if err := inner(c, args); err != nil {
+			return &targetError{cmd: c.Name(), args: args, err: err}
+		}
+		return nil
+	}
+}
+
+// targetError is an error with the request that produced it in front of it.
+type targetError struct {
+	cmd  string
+	args []string
+	err  error
+}
+
+func (e *targetError) Error() string {
+	if len(e.args) == 0 {
+		return e.cmd + ": " + e.err.Error()
+	}
+	return e.cmd + " " + summarizeArgs(e.args) + ": " + e.err.Error()
+}
+
+func (e *targetError) Unwrap() error { return e.err }
+
+// summarizeArgs renders the arguments for an error message. A run fed five
+// hundred ids on stdin has a failure worth reading and a prefix nobody wants,
+// so past three the rest are counted rather than listed.
+func summarizeArgs(args []string) string {
+	const shown = 3
+	if len(args) <= shown {
+		return strings.Join(args, " ")
+	}
+	return fmt.Sprintf("%s and %d more", strings.Join(args[:shown], " "), len(args)-shown)
 }
 
 // Client lazily builds the bili client from resolved config.

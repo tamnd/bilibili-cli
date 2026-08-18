@@ -31,7 +31,7 @@ func newVerifyCmd(a *App) *cobra.Command {
 			"than to answer a question.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !live {
-				return fmt.Errorf("verify makes live requests and needs --live to say so")
+				return fmt.Errorf("this makes live requests, so it needs --live to say so")
 			}
 
 			rows := bili.Matrix()

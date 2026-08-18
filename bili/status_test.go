@@ -163,6 +163,25 @@ func TestEmptyPayloadShapes(t *testing.T) {
 	}
 }
 
+// A dry run prints the requests and invents the responses. The payload rule
+// would call every one of them a silent refusal, since the body it invents
+// carries no payload by design, and the user would be told an endpoint refused
+// a request that was never sent.
+func TestADryRunIsNeverClassifiedAsARefusal(t *testing.T) {
+	base := "https://api.bilibili.com/x/v3/fav/folder/created/list-all"
+	if !carriesPayload(base) {
+		t.Fatalf("%s should carry a payload, so this test is testing the wrong endpoint", base)
+	}
+	res := result{body: dryRunBody, status: 200, contentType: "application/json", base: base, dryRun: true}
+	st, _, apiErr := classify(res)
+	if st != StatusEmpty {
+		t.Errorf("dry run classified as %q, want %q", st, StatusEmpty)
+	}
+	if apiErr != nil {
+		t.Errorf("dry run produced an error: %v", apiErr)
+	}
+}
+
 func TestRefusedAndCacheableAgree(t *testing.T) {
 	for st, refused := range map[Status]bool{
 		StatusOK:            false,
@@ -172,6 +191,7 @@ func TestRefusedAndCacheableAgree(t *testing.T) {
 		StatusForbidden:     true,
 		StatusNotFound:      true,
 		StatusRate:          true,
+		StatusNetwork:       true,
 		StatusError:         true,
 	} {
 		if st.Refused() != refused {

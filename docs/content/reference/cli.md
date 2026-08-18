@@ -89,10 +89,53 @@ Available on every command:
 | `--cookie-file` | none | Path to a file holding the cookie header |
 | `--lang` | `zh-CN` | Locale for localized fields |
 | `--rate` | `350ms` | Minimum delay between requests |
-| `--retries` | `4` | Retry attempts on rate-limit/risk-control/5xx |
+| `--retries` | `4` | Retry attempts on 429 and 5xx. A risk refusal is never retried |
 | `--cache` / `--no-cache` | on | Use or bypass the on-disk response cache |
 | `--cache-ttl` | `1h` | Cache freshness window |
 | `--proxy` | none | HTTP or SOCKS proxy URL |
 | `--dry-run` | off | Print the requests that would be made, without calling |
 | `--color` | auto | `auto`, `always`, or `never` |
 | `-q, --quiet` | off | Suppress progress output on stderr |
+
+## Exit codes
+
+A refusal and an empty answer are different results, so they get different
+codes. A script can act on the difference without reading stderr.
+
+| Code | Meaning |
+|---|---|
+| 0 | it did what it was asked |
+| 1 | this tool could not do what was asked and cannot say why: a flag or argument it does not understand, a response it could not classify, or a run interrupted part way |
+| 2 | risk control refused the request, as a `-352` or an HTTP 412. Retrying will not clear it, a logged-in cookie usually will |
+| 3 | the request succeeded and there was genuinely nothing to return |
+| 4 | the API returned a success code carrying no payload, on an endpoint that always carries one. This is a refusal wearing a success code, and it is described in [troubleshooting](/reference/troubleshooting/) |
+| 5 | a network failure, a timeout, or a 5xx that outlived the retries |
+| 6 | rate limited: a `-509` or a 429 that outlived the retries. This one clears by waiting |
+| 7 | not found, either as a `-404` or as the private constant an endpoint uses instead |
+
+```console
+$ bili audio au1 >/dev/null; echo $?
+7
+$ bili favorites 946974 >/dev/null; echo $?
+4
+$ bili video BV1xx411c7mD --tags >/dev/null; echo $?
+3
+```
+
+Three of those are worth branching on in a loop: 2 says stop and get a cookie, 6
+says sleep and try again, and 3 says this one is genuinely empty and the next
+one is worth asking for.
+
+## Runs of many
+
+`bili video` takes any number of identifiers, and so does `-` on stdin. The exit
+codes describe the run rather than one target:
+
+- a failure part way through does not stop the rest
+- every failure is named on stderr as it happens, and the counts follow
+- a status becomes the run's exit code only when it covers every target
+- a run where every target failed differently exits 1, because no single status
+  describes it
+
+One refused folder listing in five hundred is not a refused run, so it exits 0
+and says so on stderr.
