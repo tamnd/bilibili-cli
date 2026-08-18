@@ -305,14 +305,20 @@ it once a week and opens an issue when a row moves.
 
 ## Releasing
 
-Push a version tag and GitHub Actions runs GoReleaser:
+Write the section for the new version in [CHANGELOG.md](CHANGELOG.md) first, then
+push a version tag and GitHub Actions runs GoReleaser:
 
 ```bash
-git tag -a v0.1.1 -m "v0.1.1"
+git tag -a v0.3.0 -m "v0.3.0"
 git push --tags
 ```
 
-The image tag carries no `v` prefix (`ghcr.io/tamnd/bili:0.2.0`).
+The release notes are that changelog section, not a list of commit subjects. A
+tag with no section fails the release before anything is published, because a
+commit list says what was done and never says what it means to somebody who has
+the previous version installed.
+
+The image tag carries no `v` prefix (`ghcr.io/tamnd/bili:0.3.0`).
 
 ## License
 
