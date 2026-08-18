@@ -65,6 +65,7 @@ through the shared [output formatter](/reference/output/).
 | Command | What it does |
 |---|---|
 | `nav` | Login state and current WBI keys (debug) |
+| `verify --live` | Re-measure the endpoint requirement matrix against the live API |
 | `config show` | Print resolved configuration and important paths |
 | `cache info` / `cache clear` | Inspect or clear the on-disk response cache |
 | `version` | Print version, commit, and build date |

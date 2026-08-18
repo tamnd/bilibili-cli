@@ -1,0 +1,109 @@
+name: drift
+
+# What an endpoint needs in order to answer is a fact about somebody else's
+# servers, and it changes without an announcement. An endpoint that answers a
+# bare request today can start demanding a signature next month, and nothing in
+# the offline test suite would notice, because the offline test suite only knows
+# what this repository believes.
+#
+# So once a week this asks the site. bili/matrix.go records what each endpoint
+# needed on the day it was measured; `bili verify --live` requests each of them
+# and reports the rows that no longer match.
+#
+# It is weekly and not nightly on purpose. A signing policy does not change
+# overnight, the matrix is two dozen endpoints requested one at a time, and
+# running it every night to print the same table is bilibili paying for our
+# reporting.
+#
+# It never runs on a pull request. The site changing is news, not a broken
+# build, and a contributor should not have their branch turn red because risk
+# control tightened while they were writing a docs fix.
+
+on:
+  schedule:
+    # Mondays at 07:19 UTC, off the hour to stay out of the cron rush.
+    - cron: "19 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: drift
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+
+      - name: build
+        run: go build -o bin/bili ./cmd/bili
+
+      # --rate 1s rather than the 350ms default. A runner is a datacentre
+      # address making two dozen requests in a row, which is the exact shape
+      # risk control exists to slow down, and a 412 caused by our own pace
+      # looks identical to the site tightening. Probe already backs off and
+      # asks a second time before calling a row moved; pacing the run means it
+      # rarely has to.
+      #
+      # It runs once. The report goes to the step summary and to an artifact
+      # from the same run rather than from a second one, because two live runs
+      # of the same matrix to print the same thing twice is bilibili paying for
+      # our reporting.
+      - name: bili verify --live --strict
+        run: |
+          set +e
+          ./bin/bili verify --live --strict --no-cache --rate 1s -o json \
+            > drift.json 2> drift.txt
+          status=$?
+          cat drift.txt
+          exit $status
+
+      - name: report
+        if: always()
+        run: |
+          {
+            echo '### bili verify --live --strict'
+            echo '```'
+            cat drift.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: drift
+          path: |
+            drift.txt
+            drift.json
+          retention-days: 90
+
+      # A failure is a row that behaves differently from the way it is recorded,
+      # which is a decision to revisit and not a flake to retry. One open issue
+      # at a time: the title is fixed so a second week of the same drift
+      # comments rather than opening a duplicate.
+      - name: open or update the drift issue
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="drift: an endpoint no longer matches the requirement matrix"
+          existing=$(gh issue list --state open --search "$title in:title" --json number -q '.[0].number')
+          body=$(printf '%s\n\n%s\n' \
+            'bili verify --live --strict failed on the weekly run. An endpoint in bili/matrix.go behaves differently from the way it is recorded, which is either a signing decision to change or a row to re-measure. Probe already asked each refusing row a second time a minute later, so this is not rate pressure.' \
+            "The run, with the full table in its summary: $RUN")
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body" --label drift
+          fi

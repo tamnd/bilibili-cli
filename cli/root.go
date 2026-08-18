@@ -122,6 +122,7 @@ func Root() *cobra.Command {
 		newStreamsCmd(app),
 		newIDCmd(app),
 		newNavCmd(app),
+		newVerifyCmd(app),
 		newDiscoverCmd(app),
 		newCrawlCmd(app),
 		newConfigCmd(app),
