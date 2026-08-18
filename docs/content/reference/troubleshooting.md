@@ -49,10 +49,13 @@ handing you an empty list:
 
 ```console
 $ bili favorites 946974
-Refused: this endpoint always carries a payload when it answers, so this is a
-refusal and not an empty result. It refuses anonymous callers, and only a
-logged-in cookie via --cookie or BILI_COOKIE changes that (code 0 with no
-payload) [api.bilibili.com/x/v3/fav/folder/created/list-all]
+favorites 946974: refused: this endpoint always carries a payload when it
+answers, so this is a refusal and not an empty result. It refuses anonymous
+callers, and only a logged-in cookie via --cookie or BILI_COOKIE changes that.
+Reading the folder directly by its id used to be the way around this and is not
+any more, so this needs a logged-in cookie rather than a different command
+(code 0 with no payload)
+[api.bilibili.com/x/v3/fav/folder/created/list-all]
 ```
 
 Two endpoints do this today. `x/v3/fav/folder/created/list-all`, behind `bili
@@ -61,14 +64,68 @@ and likes. Both answer normally with a logged-in cookie.
 
 An older version of this page said an empty favorites list was the owner's
 privacy setting. That was wrong. The endpoint answers the same way for every
-mid measured, public folders included, and reading one folder directly by its
-`ml` id still works while anonymous.
+mid measured, public folders included.
+
+That paragraph also said reading one folder directly by its `ml` id still works
+while anonymous, and on 2026-08-19 that stopped being true. The folder read
+answers with the folder's title, owner and `media_count`, and with `medias:
+null` and `has_more: true` beside them, which is the contents withheld rather
+than a folder with nothing in it. bili reads the count it was given and says so:
+
+```console
+$ bili favorite ml1952291424 >/dev/null; echo $?
+4
+```
+
+The count is in the message, because a reader told that the folder holds 145
+items and sent none of them does not have to take the tool's word for the
+classification. Both reads answer normally with a logged-in cookie.
 
 The distinction bili is drawing here is not visible in the response. A folder
 with nothing in it and an endpoint refusing to tell you both have no records in
 them. It is drawn from a table of which endpoints carry a payload when they
 answer, which is measured rather than assumed, and which `bili verify --live`
 re-measures weekly.
+
+## A feed that returns nothing
+
+`bili dynamics <mid>` reads a paginated feed, and a paginated feed has two ways
+to produce no items: it ran out, or the page was refused. They look identical
+from the outside, so bili reads what the server said rather than counting what
+it sent.
+
+A page carrying no items ends the feed only when the server also said
+`has_more: false` and only after an earlier page produced something. A page that
+promised more and then sent none is a refusal, and so is a first page that
+carried nothing at all, because this endpoint refuses anonymous callers far more
+often than a creator posts nothing:
+
+```console
+$ bili dynamics 946974 >/dev/null; echo $?
+4
+```
+
+A creator who has genuinely never posted looks the same from here, which is why
+the message says so and asks for a cookie rather than asserting that the feed is
+empty. With a logged-in cookie the same read returns the feed.
+
+## A walk that came back short
+
+`bili discover` meets refusals as a matter of course: it follows edges across
+many endpoints and some of them are gated for some addresses. A gated edge is a
+note on stderr and the walk carries on, and the notes are counted by kind when
+it finishes:
+
+```console
+$ bili discover BV1gtgE6AEmZ --depth 2 -o jsonl > graph.jsonl
+bili: note: risk control: ... [api.bilibili.com/x/space/wbi/arc/search]
+bili: reached 214 nodes past the seeds, 3 risk
+```
+
+That run exits 0, because it reached the graph it was asked for and said what it
+could not see. Only a walk where every edge was refused, so nothing past the
+seeds was reached, exits with the refusal's code. A walk refused in more than
+one way exits 1, since no single state describes it.
 
 ## Localized fields are in Chinese
 

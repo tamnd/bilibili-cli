@@ -203,15 +203,20 @@ type Seed struct {
 }
 
 // WalkOptions bounds a walk. Depth is the number of hops from each seed; Max
-// caps the total nodes streamed; Fanout caps neighbors followed per edge. Note,
-// when set, receives a one-line message for each non-fatal failure deeper in the
-// walk.
+// caps the total nodes streamed; Fanout caps neighbors followed per edge.
+//
+// Note, when set, receives each non-fatal failure deeper in the walk. It takes
+// the error rather than its text on purpose. A gated edge is the ordinary case
+// here and not the exception, so the caller needs to be able to ask what state
+// it was gated into, count the refusals by kind, and let them reach the exit
+// code. Handing over a string flattens all of that into prose and leaves the
+// caller with nothing to do but print it.
 type WalkOptions struct {
 	Depth  int
 	Max    int
 	Fanout int
 	Edges  EdgeSet
-	Note   func(string)
+	Note   func(error)
 }
 
 // grapher is the subset of *Client the walker needs. It exists so the BFS logic
@@ -401,5 +406,5 @@ func note(opts WalkOptions, err error) {
 	if err == nil || opts.Note == nil {
 		return
 	}
-	opts.Note(err.Error())
+	opts.Note(err)
 }

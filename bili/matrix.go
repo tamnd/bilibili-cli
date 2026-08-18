@@ -81,6 +81,14 @@ type Requirement struct {
 
 	// Note explains any row that would otherwise look like a mistake.
 	Note string
+
+	// Advice is what to tell the person who hit a refusal on this endpoint,
+	// and it is only worth setting where there is something to say beyond "get
+	// a cookie". The folder listing is the case that earns the field: the
+	// listing is refused and the folder contents are not, so a caller who
+	// knows a media_id can still read that folder. A refusal that names a way
+	// forward is a different experience from one that names a wall.
+	Advice string
 }
 
 // Matrix returns the requirement matrix. The objects it names are deliberately
@@ -160,6 +168,7 @@ func Matrix() []Requirement {
 			Payload: true,
 			Expect:  stateRefusedSilent,
 			Note:    "answers code 0 with an empty object, signed or not. It carries a creator's view and like totals when it answers, which is why the empty object is a refusal and why bili user prints zeros today",
+			Advice:  "The creator's view and like totals come from here and nowhere else, so they are unavailable anonymously rather than zero",
 		},
 		{
 			Name:    "x/polymer/web-dynamic/v1/feed/space",
@@ -169,7 +178,7 @@ func Matrix() []Requirement {
 			Signed:  true,
 			Device:  true,
 			Payload: true,
-			Note:    "the only endpoint measured that refuses with an HTTP 412 and an HTML body rather than a code",
+			Note:    "the only endpoint measured that refuses with an HTTP 412 and an HTML body rather than a code. Measured again on 2026-08-19 answering 200 to an anonymous caller with has_more false and an empty items array, which is a refusal the payload rule cannot see: the payload is there and it is empty inside. The paging rule in dynamic.go is what names that one, so this row stays Expect empty and the probe reports it as answering",
 		},
 		{
 			Name:    "x/web-interface/popular",
@@ -218,6 +227,7 @@ func Matrix() []Requirement {
 			Base:    "https://api.bilibili.com/x/v3/fav/resource/list",
 			Params:  url.Values{"media_id": {"1952291424"}, "ps": {"5"}, "pn": {"1"}, "platform": {"web"}},
 			Payload: true,
+			Note:    "answers, and the answer is not the whole of what was asked. Measured on 2026-08-19 returning info.media_count 145 with medias null and has_more true to an anonymous caller, which is the folder's metadata with its contents withheld. The payload rule cannot see that, since a payload is present; favorite.go compares the item count against media_count instead",
 		},
 		{
 			Name:    "x/v3/fav/folder/created/list-all",
@@ -225,7 +235,8 @@ func Matrix() []Requirement {
 			Params:  vals("up_mid", mid),
 			Payload: true,
 			Expect:  stateRefusedSilent,
-			Note:    "answers code 0 with a null payload, signed or not. It carries the folder list when it answers, so the null is a refusal rather than a user with no folders. Reading a folder by media_id still works",
+			Note:    "answers code 0 with a null payload, signed or not. It carries the folder list when it answers, so the null is a refusal rather than a user with no folders. Reading a folder by media_id was a way around this when the row was first measured and no longer is: see the resource/list row",
+			Advice:  "Reading the folder directly by its id used to be the way around this and is not any more, so this needs a logged-in cookie rather than a different command",
 		},
 		{
 			Name:    "room/v1/Room/get_info",

@@ -23,10 +23,16 @@ func newVersionCmd(a *App) *cobra.Command {
 				fmt.Println(Version)
 				return nil
 			}
-			info := map[string]string{"version": Version, "commit": Commit, "date": Date}
+			// The user agent is printed because on this site it is load bearing:
+			// risk control reads the platform token out of it, and an honest
+			// override is refused on five endpoints. That makes the effective
+			// value a fact about the run rather than a detail of the build.
+			ua := a.effectiveUserAgent()
+			info := map[string]string{"version": Version, "commit": Commit, "date": Date, "user_agent": ua}
 			f := a.resolveFormat()
 			if f == FormatTable || f == FormatAuto || f == FormatList {
 				fmt.Printf("bili %s (%s) built %s\n", Version, Commit, Date)
+				fmt.Printf("user-agent %s\n", ua)
 				return nil
 			}
 			b, _ := json.MarshalIndent(info, "", "  ")

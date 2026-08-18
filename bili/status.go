@@ -180,6 +180,18 @@ var payloadEndpoints = sync.OnceValue(func() map[string]bool {
 // carriesPayload reports whether base always carries a payload when it answers.
 func carriesPayload(base string) bool { return payloadEndpoints()[base] }
 
+// endpointAdvice is the per-endpoint way forward, derived from the same matrix
+// for the same reason: one table, not two.
+var endpointAdvice = sync.OnceValue(func() map[string]string {
+	m := make(map[string]string, len(Matrix()))
+	for _, r := range Matrix() {
+		if r.Advice != "" {
+			m[r.Base] = r.Advice
+		}
+	}
+	return m
+})
+
 // isEmptyPayload reports whether a payload carries nothing.
 //
 // An empty array is not in this set on purpose. A server that went to the
@@ -245,6 +257,7 @@ func classify(res result) (Status, envelope, *APIError) {
 	if env.Code != 0 {
 		e := apiError(env.Code, env.Message)
 		e.Endpoint = res.base
+		noteUserAgent(e, res)
 		return e.Status, env, e
 	}
 
@@ -304,21 +317,45 @@ func httpError(st Status, known bool, res result) *APIError {
 }
 
 func riskError(res result) *APIError {
-	return &APIError{
+	e := &APIError{
 		Message:  "intercepted by risk control",
 		Hint:     riskHint,
 		Status:   StatusRisk,
 		Endpoint: res.base,
 	}
+	noteUserAgent(e, res)
+	return e
+}
+
+// noteUserAgent adds the one sentence that turns a risk refusal from a wall
+// into something to check first.
+//
+// It is attached to risk refusals only, and only when the caller replaced the
+// user agent. The default is a real desktop browser string these endpoints
+// accept; a custom one is the single most common self-inflicted -352, and a
+// caller staring at a refusal has no way to know the flag they set three shells
+// ago is the reason.
+func noteUserAgent(e *APIError, res result) {
+	if !res.uaOverridden || e.Status != StatusRisk {
+		return
+	}
+	e.Hint += ". This request went out under a --user-agent you supplied, and the default is a browser string these endpoints accept, so try again without it before anything else"
 }
 
 func refusedSilentError(base string) *APIError {
-	return &APIError{
+	e := &APIError{
 		Message:  "code 0 with no payload",
 		Hint:     "this endpoint always carries a payload when it answers, so this is a refusal and not an empty result. It refuses anonymous callers, and only a logged-in cookie via --cookie or BILI_COOKIE changes that",
 		Status:   StatusRefusedSilent,
 		Endpoint: base,
 	}
+	// Where the matrix knows a way around this endpoint's refusal, say it. A
+	// refusal that names a way forward is a different experience from one that
+	// names a wall, and the folder listing has exactly such a way around it.
+	if a := endpointAdvice()[base]; a != "" {
+		e.Hint += ". " + a
+	}
+	return e
 }
 
 // snippet is the first 200 bytes of a body, for the case where classification

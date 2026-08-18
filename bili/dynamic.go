@@ -94,12 +94,44 @@ func (c *Client) Dynamic(ctx context.Context, id string) (*Dynamic, error) {
 	return &d, nil
 }
 
+// dynFeedBase is the space feed endpoint, named once because the pagination
+// rule below builds errors that have to point at the same URL the request went
+// to.
+const dynFeedBase = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space"
+
+// endOfFeed reports whether a page carrying no items is the feed ending.
+//
+// The item count is not the signal. This endpoint says has_more, and reading
+// the count instead means a refused page and an exhausted feed are the same
+// event: both arrive as zero items, and stopping quietly on either one turns a
+// refusal into a short list that looks complete. So the count only ends the
+// loop when the server also said there is nothing after it, and only on a page
+// that already produced items. A first page carrying nothing has not paginated
+// anywhere, and this feed refuses anonymous callers far more often than a
+// creator posts nothing at all.
+func endOfFeed(page int, hasMore bool) bool { return page > 0 && !hasMore }
+
+// emptyFeedError is the refusal a page of no items amounts to.
+func emptyFeedError(hasMore bool) *APIError {
+	e := &APIError{
+		Message:  "the feed returned no items",
+		Status:   StatusRefusedSilent,
+		Endpoint: dynFeedBase,
+	}
+	if hasMore {
+		e.Hint = "the feed said there was more and then sent none, so this is a refusal rather than the end of the list. Supply a logged-in cookie via --cookie or BILI_COOKIE and read it again"
+	} else {
+		e.Hint = "the first page of this feed carried nothing. A creator who has never posted would look the same, but this endpoint refuses anonymous callers far more often than that, so supply a logged-in cookie via --cookie or BILI_COOKIE before believing the feed is empty"
+	}
+	return e
+}
+
 // Dynamics streams a user's dynamics feed.
 func (c *Client) Dynamics(ctx context.Context, mid string, opt ListOptions) iter.Seq2[Dynamic, error] {
 	return func(yield func(Dynamic, error) bool) {
 		offset := ""
 		emitted := 0
-		for {
+		for page := 0; ; page++ {
 			p := vals("host_mid", mid, "features", "itemOpusStyle", "platform", "web", "web_location", "333.999")
 			if offset != "" {
 				p.Set("offset", offset)
@@ -110,11 +142,14 @@ func (c *Client) Dynamics(ctx context.Context, mid string, opt ListOptions) iter
 				Offset  string       `json:"offset"`
 				Items   []rawDynItem `json:"items"`
 			}
-			if err := c.getJSONSigned(ctx, "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space", p, &r); err != nil {
+			if err := c.getJSONSigned(ctx, dynFeedBase, p, &r); err != nil {
 				yield(Dynamic{}, err)
 				return
 			}
 			if len(r.Items) == 0 {
+				if !endOfFeed(page, r.HasMore) {
+					yield(Dynamic{}, emptyFeedError(r.HasMore))
+				}
 				return
 			}
 			for _, it := range r.Items {
