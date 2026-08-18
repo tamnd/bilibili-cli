@@ -42,8 +42,15 @@ docker run --rm ghcr.io/tamnd/bili:latest video BV17x411w7KC
 
 - **Go 1.26 or later** to build. The released binary has no Go requirement.
 
-That is the whole list. No config file, no database to provision, no daemon, and
-no API key.
+That is the whole list for reading. No config file, no database to provision, no
+daemon, and no API key.
+
+One command wants something bili does not ship. `bili download` runs
+[BBDown](https://github.com/nilaoda/BBDown) to fetch the audio, and
+[ffmpeg](https://ffmpeg.org/download.html) to transcode it when you ask for
+`mp3`, `flac` or `wav`. Both are looked up on PATH and neither is installed for
+you. Everything else here works without them, and a missing one is reported by
+name before anything starts.
 
 ## Checking the install
 

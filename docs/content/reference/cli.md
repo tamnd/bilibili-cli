@@ -18,6 +18,25 @@ through the shared [output formatter](/reference/output/).
 | `streams <id>` | a video | Playable stream URLs for a video part |
 | `danmaku <id>` | a video | Bullet-chat (danmaku) for a video part |
 
+## Downloading
+
+| Command | Argument | What it does |
+|---|---|---|
+| `download <id>` | a video | Download its audio through BBDown, transcoding with ffmpeg when the format asks for it |
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--format` | `m4a` | `m4a`, `mp3`, `flac` or `wav`. `m4a` is native and needs no ffmpeg |
+| `--quality` | `best` | mp3 bitrate preset: `best`, `high`, `medium`, `low`, `worst`. Ignored for `flac` and `wav` |
+| `--parts` | all | BBDown part selection, such as `1,3-5,LAST` |
+| `--output-dir` | `.` | Where finished files are moved to |
+| `--bbdown-bin` | PATH | Path to BBDown, or set `BILI_BBDOWN_BIN` |
+| `--ffmpeg-bin` | PATH | Path to ffmpeg, or set `BILI_FFMPEG_BIN` |
+| `--file-pattern` | `<videoTitle>` | BBDown single part naming pattern |
+| `--multi-file-pattern` | `<videoTitle>/<pageNumberWithZero> <pageTitle>` | BBDown multi part naming pattern |
+
+Neither binary is bundled. See [downloading audio](/guides/videos/#download-audio).
+
 ## Conversation
 
 | Command | Argument | What it does |
