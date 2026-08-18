@@ -47,12 +47,28 @@ func (c *Client) Danmaku(ctx context.Context, idOrURL string, part int) iter.Seq
 		var all []Danmaku
 		for seg := 1; seg <= segments; seg++ {
 			p := vals("type", "1", "oid", itoa(cid), "pid", itoa(aid), "segment_index", strconv.Itoa(seg))
-			body, err := c.rawGet(ctx, buildURL("https://api.bilibili.com/x/v2/dm/web/seg.so", p), nil)
+			res, err := c.fetch(ctx, buildURL("https://api.bilibili.com/x/v2/dm/web/seg.so", p), nil)
 			if err != nil {
 				yield(Danmaku{}, err)
 				return
 			}
-			elems, err := dmproto.Decode(body)
+			// This surface is protobuf, so it gets classified before decoding
+			// too. The case that matters is an HTML body: risk control serves
+			// the same interstitial here as anywhere else, and a protobuf
+			// decoder meeting it reports a malformed varint, which sends the
+			// reader looking for a bug in the decoder.
+			//
+			// The empty body rule applies to the first segment only. A video
+			// has as many segments as it has six minute blocks, and the last
+			// one is routinely short or absent, so an empty segment three is
+			// the end of the stream rather than a refusal. An empty segment
+			// one is a refusal.
+			st, apiErr := classifyBinary(res)
+			if apiErr != nil && (seg == 1 || st != StatusRefusedSilent) {
+				yield(Danmaku{}, apiErr)
+				return
+			}
+			elems, err := dmproto.Decode(res.body)
 			if err != nil {
 				// an empty or short segment is not fatal; stop walking
 				break

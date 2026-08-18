@@ -29,6 +29,8 @@ func TestMatrixIsWellFormed(t *testing.T) {
 			t.Errorf("%s: wants device parameters but is not signed, which was never measured", r.Name)
 		case !r.Payload && r.Note == "":
 			t.Errorf("%s: recorded as carrying no payload without saying why", r.Name)
+		case r.Expect != "" && r.Expect != StatusOK && r.Note == "":
+			t.Errorf("%s: recorded as not answering without saying why", r.Name)
 		}
 		seen[r.Name] = true
 	}
@@ -160,7 +162,7 @@ func clientSigningDecisions(t *testing.T) map[string]bool {
 }
 
 func TestClassifyCode(t *testing.T) {
-	for code, want := range map[int]string{
+	for code, want := range map[int]Status{
 		-352:    stateRisk,
 		-403:    stateForbidden,
 		-404:    stateNotFound,
@@ -175,8 +177,6 @@ func TestClassifyCode(t *testing.T) {
 }
 
 func TestProbeReportsRefusedSilentAsRecorded(t *testing.T) {
-	// upstat is recorded as carrying no payload. A code 0 with an empty object
-	// is therefore the recorded behaviour and must not be reported as drift.
 	var upstat Requirement
 	for _, r := range Matrix() {
 		if r.Name == "x/space/upstat" {
@@ -186,11 +186,18 @@ func TestProbeReportsRefusedSilentAsRecorded(t *testing.T) {
 	if upstat.Name == "" {
 		t.Fatal("x/space/upstat is not in the matrix")
 	}
-	if upstat.Payload {
-		t.Error("x/space/upstat is recorded as carrying a payload, which it has never done anonymously")
+
+	// Payload and Expect answer different questions and this row is where the
+	// difference shows. upstat carries a creator's view and like totals when it
+	// answers, so Payload is true, and it does not answer anonymously, so
+	// Expect is refused_silent. Setting Payload to false to keep the probe
+	// quiet would also tell the classifier that an empty object here is a
+	// legitimate result, which is the exact bug this release exists to fix.
+	if !upstat.Payload {
+		t.Error("x/space/upstat carries a payload when it answers, and recording otherwise makes its silence unnameable")
 	}
-	if len(upstat.Params) == 0 {
-		t.Error("x/space/upstat has no parameters")
+	if upstat.Expect != StatusRefusedSilent {
+		t.Errorf("x/space/upstat is recorded as answering %q, and it does not answer anonymously", upstat.Expect)
 	}
 	if _, ok := upstat.Params["mid"]; !ok {
 		t.Error("x/space/upstat is probed without a mid")
