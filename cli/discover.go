@@ -51,8 +51,11 @@ nodes (default 500).
 
 Most read endpoints are open to anonymous callers; a few (creator catalogues in
 particular) are gated by bilibili's anti-bot for some IPs. A gated edge deeper in
-the walk becomes a one-line note and the walk carries on; supplying a logged-in
---cookie or BILI_COOKIE widens what a walk can reach.
+the walk becomes a one-line note on stderr and the walk carries on, and the notes
+are counted by kind at the end so a short graph is never silently short. A walk
+that reached anything past its seeds exits 0; a walk where every edge was refused
+exits with that refusal's code. Supplying a logged-in --cookie or BILI_COOKIE
+widens what a walk can reach.
 
 bili discover streams to stdout. To keep a walk, pipe it:
   bili discover BV17x411w7KC --depth 2 -o jsonl > graph.jsonl
@@ -74,14 +77,16 @@ For split per-type files instead, see bili crawl.`,
 				budget = defaultDiscoverBudget
 			}
 
+			var notes walkNotes
 			opts := bili.WalkOptions{
 				Depth:  depth,
 				Max:    budget,
 				Fanout: fanout,
 				Edges:  edges,
-				Note: func(s string) {
+				Note: func(err error) {
+					notes.add(err)
 					if !a.quiet {
-						fmt.Fprintf(os.Stderr, "bili: note: %s\n", s)
+						fmt.Fprintf(os.Stderr, "bili: note: %s\n", err)
 					}
 				},
 			}
@@ -90,14 +95,21 @@ For split per-type files instead, see bili crawl.`,
 			if err != nil {
 				return err
 			}
+			var reached int
 			walkErr := a.Client().Walk(a.ctx(), seeds, opts, func(n *bili.Node) error {
+				if n.Depth > 0 {
+					reached++
+				}
 				return out.Emit(nodeRow(n))
 			})
 			closeErr := out.Close()
 			if walkErr != nil {
 				return walkErr
 			}
-			return closeErr
+			if closeErr != nil {
+				return closeErr
+			}
+			return notes.result(a, reached)
 		},
 	}
 	f := cmd.Flags()
@@ -105,6 +117,75 @@ For split per-type files instead, see bili crawl.`,
 	f.IntVar(&fanout, "fanout", 25, "max neighbors to follow per edge (0 = unlimited)")
 	f.StringVar(&follow, "follow", "content", "edges to follow ("+bili.EdgeHelp()+")")
 	return cmd
+}
+
+// walkNotes tallies the gated edges a walk ran into.
+//
+// A walk meets refusals as a matter of course, and a note printed and forgotten
+// leaves the caller with a list that is short for a reason nobody recorded. So
+// the notes are counted by the state they were classified into, and that tally
+// decides both the line on stderr and what the run exits with.
+type walkNotes struct {
+	count map[bili.Status]int
+	first map[bili.Status]error
+	order []bili.Status
+}
+
+func (w *walkNotes) add(err error) {
+	if err == nil {
+		return
+	}
+	st := bili.Kind(err)
+	if w.count == nil {
+		w.count = make(map[bili.Status]int)
+		w.first = make(map[bili.Status]error)
+	}
+	if _, seen := w.first[st]; !seen {
+		w.first[st] = err
+		w.order = append(w.order, st)
+	}
+	w.count[st]++
+}
+
+func (w *walkNotes) total() int {
+	var n int
+	for _, c := range w.count {
+		n += c
+	}
+	return n
+}
+
+// summary is the counts line, in the order the states were first met.
+func (w *walkNotes) summary() string {
+	parts := make([]string, 0, len(w.order))
+	for _, st := range w.order {
+		parts = append(parts, fmt.Sprintf("%d %s", w.count[st], st))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// result decides what the walk exits with, by the same rule every command in
+// this tool follows: a state becomes the run only when it covers everything.
+//
+// A walk that reached anything past its seeds did the job it was asked to do,
+// however much of the graph was gated, so it exits 0 and says on stderr what it
+// could not see. A walk where every edge was refused reached nothing, and
+// exiting 0 there would report an empty graph as a complete one.
+func (w *walkNotes) result(a *App, reached int) error {
+	if w.total() == 0 {
+		return nil
+	}
+	if reached > 0 {
+		a.progress("bili: reached %d nodes past the seeds, %s", reached, w.summary())
+		return nil
+	}
+	if len(w.order) == 1 {
+		return w.first[w.order[0]]
+	}
+	// Refused in more than one way, so no single state describes the walk.
+	// Presenting one of them as the answer would be a guess with an exit code
+	// attached to it.
+	return fmt.Errorf("every edge was refused: %s", w.summary())
 }
 
 // toSeeds wraps raw arguments as walk seeds. Classification happens at walk time

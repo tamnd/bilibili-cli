@@ -198,13 +198,19 @@ func (a *App) Client() *bili.Client {
 	cfg.DryRun = a.dryRun
 	cfg.Lang = a.lang
 	cfg.Proxy = firstNonEmpty(a.proxy, os.Getenv("BILI_PROXY"))
-	cfg.UserAgent = firstNonEmpty(a.userAgent, os.Getenv("BILI_USER_AGENT"))
-	if cfg.UserAgent == "" {
-		cfg.UserAgent = bili.DefaultUserAgent
-	}
+	cfg.UserAgent = a.effectiveUserAgent()
 	cfg.Cookie = a.resolveCookie()
 	a.client = bili.NewClient(cfg)
 	return a.client
+}
+
+// effectiveUserAgent is the string requests will actually go out under,
+// resolved the same way the client resolves it.
+func (a *App) effectiveUserAgent() string {
+	if ua := firstNonEmpty(a.userAgent, os.Getenv("BILI_USER_AGENT")); ua != "" {
+		return ua
+	}
+	return bili.DefaultUserAgent
 }
 
 func (a *App) resolveCookie() string {

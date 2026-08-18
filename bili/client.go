@@ -209,6 +209,14 @@ type result struct {
 	// is nothing in it to classify, and every state except empty would be a
 	// statement about a site that was never asked.
 	dryRun bool
+
+	// uaOverridden records that this request went out under a user agent the
+	// caller chose. It is carried because a risk refusal is the one place it
+	// matters: the default UA is a real desktop browser string that these
+	// endpoints accept, and the most common way to get a -352 out of a request
+	// that would otherwise work is to have replaced it. Saying so costs one
+	// sentence and saves an afternoon.
+	uaOverridden bool
 }
 
 // rawGet performs a GET with retries and returns the decompressed body. It is
@@ -297,10 +305,11 @@ func (c *Client) fetch(ctx context.Context, rawURL string, headers map[string]st
 			continue
 		}
 		res := result{
-			body:        body,
-			status:      resp.StatusCode,
-			contentType: resp.Header.Get("Content-Type"),
-			base:        base,
+			body:         body,
+			status:       resp.StatusCode,
+			contentType:  resp.Header.Get("Content-Type"),
+			base:         base,
+			uaOverridden: c.cfg.UserAgent != DefaultUserAgent,
 		}
 		// Everything that is left is handed back for classification, including
 		// the non 2xx statuses. A 412 carries the HTML interstitial that says

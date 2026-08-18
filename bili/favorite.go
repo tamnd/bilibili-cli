@@ -30,6 +30,44 @@ func (c *Client) Favorites(ctx context.Context, mid string) ([]Favorite, error) 
 	return out, nil
 }
 
+// favItemsBase is the folder contents endpoint, named once because the rule
+// below builds errors that have to point at the same URL the request went to.
+const favItemsBase = "https://api.bilibili.com/x/v3/fav/resource/list"
+
+// emptyFolderPage decides what a page of no items means, and returns nil when
+// it means the folder ran out.
+//
+// This endpoint hands back the folder's own metadata alongside its contents,
+// which is a piece of luck: info.media_count says how many items the folder
+// holds, so a first page carrying none of them is not a judgement call. A
+// folder that says it holds 145 items and sends zero has withheld them, and
+// that was measured happening to anonymous callers on 2026-08-19 with
+// has_more true alongside it.
+//
+// The page number is read as well, because a caller who asks for --page 9 of a
+// three page folder gets no items and no more pages, and that is their arithmetic
+// rather than a refusal.
+func emptyFolderPage(page, emitted int, hasMore bool, mediaCount int) *APIError {
+	switch {
+	case hasMore:
+		return folderRefusal("the folder said there was more and then sent none")
+	case emitted > 0:
+		return nil
+	case page == 1 && mediaCount > 0:
+		return folderRefusal(fmt.Sprintf("the folder holds %d items and sent none of them", mediaCount))
+	}
+	return nil
+}
+
+func folderRefusal(what string) *APIError {
+	return &APIError{
+		Message:  what,
+		Hint:     "the contents of this folder were withheld rather than absent, so this is a refusal and not an empty folder. Supply a logged-in cookie via --cookie or BILI_COOKIE and read it again",
+		Status:   StatusRefusedSilent,
+		Endpoint: favItemsBase,
+	}
+}
+
 // FavoriteItems streams the videos in a favorite folder.
 func (c *Client) FavoriteItems(ctx context.Context, idOrURL string, opt ListOptions) iter.Seq2[Video, error] {
 	return func(yield func(Video, error) bool) {
@@ -74,12 +112,18 @@ func (c *Client) FavoriteItems(ctx context.Context, idOrURL string, opt ListOpti
 					Pubtime int64 `json:"pubtime"`
 				} `json:"medias"`
 				HasMore bool `json:"has_more"`
+				Info    struct {
+					MediaCount int `json:"media_count"`
+				} `json:"info"`
 			}
-			if err := c.getJSON(ctx, "https://api.bilibili.com/x/v3/fav/resource/list", p, &r); err != nil {
+			if err := c.getJSON(ctx, favItemsBase, p, &r); err != nil {
 				yield(Video{}, err)
 				return
 			}
 			if len(r.Medias) == 0 {
+				if e := emptyFolderPage(page, emitted, r.HasMore, r.Info.MediaCount); e != nil {
+					yield(Video{}, e)
+				}
 				return
 			}
 			for _, m := range r.Medias {

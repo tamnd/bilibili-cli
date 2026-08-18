@@ -157,6 +157,13 @@ names the refusal instead of printing `[]`. Risk control's HTML interception is
 recognised as a refusal too, rather than surfacing as a JSON parse error, and no
 refusal is ever written to the cache.
 
+The same rule applies one page at a time. A paginated feed ends when the server
+says `has_more: false`, not when a page happens to carry no items, so a page
+that was refused mid walk is reported rather than quietly ending the list. The
+folder read gets a stronger signal than that: the endpoint returns the folder's
+own `media_count` alongside its contents, so a folder that says it holds 145
+items and sends none of them is a refusal on arithmetic rather than on a guess.
+
 **IDs.** Videos carry both an `avNNN` number and a `BV` string. `bili` converts
 between them, follows `b23.tv` short links, and classifies any id or URL you
 paste with `bili id`.
@@ -200,6 +207,11 @@ For a command given many identifiers the codes describe the run rather than one
 target. A failure part way through does not stop the rest, the counts go to
 stderr, and a status becomes the run's exit code only when it covers every
 target. One refused folder listing in five hundred is not a refused run.
+
+`bili discover` follows the same rule over a graph instead of a list. A gated
+edge is a note on stderr and the walk carries on, the notes are counted by kind
+at the end, and only a walk that reached nothing at all past its seeds exits
+with the refusal's code.
 
 ## Development
 

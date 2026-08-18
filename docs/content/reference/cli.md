@@ -136,6 +136,9 @@ codes describe the run rather than one target:
 - a status becomes the run's exit code only when it covers every target
 - a run where every target failed differently exits 1, because no single status
   describes it
+- `bili discover` applies the same rule to a walk: a gated edge is a note, the
+  notes are counted by kind, and only a walk that reached nothing past its seeds
+  exits with the refusal's code
 
 One refused folder listing in five hundred is not a refused run, so it exits 0
 and says so on stderr.

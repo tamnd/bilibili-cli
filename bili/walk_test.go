@@ -327,7 +327,7 @@ func TestWalkDeeperErrorDegrades(t *testing.T) {
 	var notes int
 	nodes := walkAll(t, g, []Seed{{Raw: "BV_TURING"}}, WalkOptions{
 		Depth: 1, Edges: edgePresets["all"],
-		Note: func(string) { notes++ },
+		Note: func(error) { notes++ },
 	})
 	if !contains(endpointsByKind(nodes, NodeUser), "2") {
 		t.Errorf("the uploader should survive a failed related edge: %v", nodes)
@@ -348,7 +348,7 @@ func TestWalkUploadsPartialError(t *testing.T) {
 	var notes int
 	nodes := walkAll(t, g, []Seed{{Raw: "https://space.bilibili.com/2"}}, WalkOptions{
 		Depth: 1, Edges: newEdgeSet(EdgeUploads),
-		Note: func(string) { notes++ },
+		Note: func(error) { notes++ },
 	})
 	vids := endpointsByKind(nodes, NodeVideo)
 	if !contains(vids, "BV_UP1") || !contains(vids, "BV_UP2") {
