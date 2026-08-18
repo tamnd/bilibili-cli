@@ -101,6 +101,7 @@ func Root() *cobra.Command {
 	pf.BoolVarP(&app.yes, "yes", "y", false, "assume yes to prompts")
 
 	root.AddCommand(
+		newDownloadCmd(app),
 		newVideoCmd(app),
 		newUserCmd(app),
 		newSearchCmd(app),

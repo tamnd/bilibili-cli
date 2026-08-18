@@ -53,10 +53,12 @@ Everything in the quick start works anonymously.
 
 ## What bili is not
 
-bili is a read-only client. It does not log in for you, post, vote, or download
+bili stays narrow. It does not log in for you, post, vote, or download
 DRM-protected streams; `streams` returns the playable URLs the API exposes, no
-more. It reads the public data and shapes it. That narrow scope is what keeps it
-a single small binary with no database, no daemon, and no setup.
+more. Ordinary public audio downloads are handed to `BBDown`, which is not
+bundled and is looked up on PATH. Everything else here is about reading public
+data and shaping it, and that narrow scope is what keeps it a single small
+binary with no database, no daemon, and no setup.
 
 Next: [install it](/getting-started/installation/), then take the
 [quick start](/getting-started/quick-start/).

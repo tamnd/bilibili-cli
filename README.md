@@ -8,8 +8,8 @@
 
 A command line for [bilibili.com](https://www.bilibili.com). `bili` resolves
 any video, user, comment, danmaku, dynamic, live room, bangumi, audio, article,
-or favorite folder into clean structured records. One pure-Go binary, no API
-key, no login.
+or favorite folder into clean structured records, and downloads audio through
+BBDown. One pure-Go binary, no API key, no login for anything public.
 
 [Install](#install) • [Commands](#commands) • [Usage](#usage) • [How it works](#how-it-works)
 
@@ -19,7 +19,8 @@ It talks to the public bilibili web endpoints over plain HTTPS: WBI signing,
 anonymous `buvid` session bootstrap, `{code, message, data}` envelope
 unwrapping, av/BV id conversion, and protobuf danmaku decoding are all handled
 for you. A cookie is optional: pass `--cookie` and `bili` reaches the same data
-your logged-in browser sees.
+your logged-in browser sees. Audio downloads are handed to `BBDown`, with
+ffmpeg doing the transcode when the format asked for is not the one it emits.
 
 `bili` is an independent tool. It is not affiliated with bilibili.
 
@@ -43,6 +44,7 @@ Shell completion is built in: `bili completion bash|zsh|fish|powershell`.
 | Command | Reads |
 | --- | --- |
 | `bili video <id\|url>...` | one or more videos; full metadata |
+| `bili download <id\|url>` | audio, via BBDown; `--format`, `--parts`, `--output-dir` |
 | `bili related <id\|url>` | related videos for a video |
 | `bili streams <id\|url>` | playable stream URLs for a video part |
 | `bili danmaku <id\|url>` | bullet-chat for a video part; `--page` |
@@ -75,6 +77,7 @@ Full reference and guides live at [bilibili-cli.tamnd.com](https://bilibili-cli.
 
 ```bash
 bili video BV17x411w7KC                    # full video metadata
+bili download BV17x411w7KC                 # its audio, as m4a
 bili comments BV17x411w7KC -n 50           # top comments with replies
 bili danmaku BV17x411w7KC                  # bullet-chat for the first part
 bili search 'lofi' -n 20                   # search videos
@@ -94,6 +97,30 @@ bili search 'lofi' -o url
 bili user 122541 --videos -o jsonl
 bili comments BV17x411w7KC --replies -o jsonl > comments.jsonl
 ```
+
+### Downloading audio
+
+`bili download` wraps [BBDown](https://github.com/nilaoda/BBDown), which
+already solves the part of this that is hard: the DASH manifest, the stream
+selection, the multi part handling and the merge. Whatever you paste is
+resolved to a bvid first, so a URL, a bare av number and a bvid all work the
+same way they do everywhere else here.
+
+```bash
+bili download BV17x411w7KC                              # m4a, straight from BBDown
+bili download BV17x411w7KC --parts 1-3 --format mp3     # transcoded with ffmpeg
+bili download BV17x411w7KC --format flac --output-dir ~/Music
+```
+
+`m4a` is what BBDown emits and involves no second process. `mp3`, `flac` and
+`wav` are transcoded once the download finishes, which needs `ffmpeg` on PATH.
+`--quality` sets the mp3 bitrate preset and is ignored for `flac` and `wav`,
+where a lossless format leaves it nothing to mean.
+
+Neither binary is bundled. Both are looked up on PATH, `--bbdown-bin` and
+`--ffmpeg-bin` point at a copy somewhere else, and a missing one is reported
+before the transfer starts rather than after it. This command downloads audio.
+It does not download video and it does not decrypt anything.
 
 Crawl a search result and pull comments and uploader profiles for each hit:
 

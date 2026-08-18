@@ -56,8 +56,55 @@ bili streams BV17x411w7KC
 
 `streams` lists the playable media URLs the API exposes for a part, with their
 quality, codec, and format. Use `--quality` to ask for a specific level. These
-are the URLs the player would use; bili does not download or decrypt anything,
-it just reports what is offered.
+are the URLs the player would use; `streams` itself downloads nothing and
+decrypts nothing, it reports what is offered.
+
+## Download audio
+
+```bash
+bili download BV17x411w7KC
+bili download BV17x411w7KC --parts 1-3 --format mp3
+bili download BV17x411w7KC --format flac --output-dir ~/Music
+```
+
+`download` wraps [BBDown](https://github.com/nilaoda/BBDown) rather than
+reimplementing it. BBDown already handles the DASH manifest, the stream
+selection, the multi part handling and the merge, and a second Go
+implementation of all that would be a second thing to maintain that does the
+same job worse. What bili adds is the part BBDown does not: whatever you paste
+is resolved to a bvid first, so a URL, a bare av number and a bvid all work
+here exactly as they do in every other command, and an id for a bangumi or an
+audio track is refused by name rather than becoming a BBDown error about a page
+that does not exist.
+
+`m4a` is what BBDown emits and involves no second process. `mp3`, `flac` and
+`wav` are transcoded with ffmpeg once the download finishes. `--quality` sets
+the mp3 bitrate preset, from `best` to `worst`, and is ignored for `flac` and
+`wav`, where a lossless format leaves it nothing to mean.
+
+`--parts` takes BBDown's own selection syntax, `1,3-5,LAST` and the like, and
+is passed straight through, as are `--file-pattern` and `--multi-file-pattern`.
+BBDown writes into a staging directory and finished files are moved into place
+from there, so a run that fails halfway leaves nothing behind in the directory
+you pointed at.
+
+### The two binaries
+
+Neither BBDown nor ffmpeg is bundled, vendored or installed for you. Both are
+looked up on PATH, and `--bbdown-bin` and `--ffmpeg-bin` point at a copy
+somewhere else, as do `BILI_BBDOWN_BIN` and `BILI_FFMPEG_BIN`. A missing one is
+reported before the transfer starts rather than after it, with the name of the
+binary and where to get it, because discovering that ffmpeg is absent at the
+end of a forty minute audiobook is a bad way to find out.
+
+`--dry-run` prints the command that would run, quoted so it can be pasted into
+a shell, and runs nothing.
+
+BBDown's progress output goes to the terminal as BBDown wrote it. bili does not
+parse it into a progress display of its own.
+
+This command downloads audio. It does not download video, and it does not
+decrypt anything.
 
 ## Bullet-chat
 

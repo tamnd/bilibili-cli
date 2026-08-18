@@ -63,6 +63,8 @@ is your live session.
 | `BILI_COOKIE` | Cookie header for logged-in endpoints |
 | `BILI_CACHE_DIR` | Override the cache directory |
 | `BILI_DATA_DIR` | Override the data directory |
+| `BILI_BBDOWN_BIN` | Path to BBDown, for `bili download` |
+| `BILI_FFMPEG_BIN` | Path to ffmpeg, for `bili download --format mp3\|flac\|wav` |
 | `HTTP_PROXY` / `HTTPS_PROXY` | Standard Go proxy variables, honored by the client |
 
 ## Global flags
