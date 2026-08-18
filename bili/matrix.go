@@ -2,7 +2,6 @@ package bili
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -60,17 +59,25 @@ type Requirement struct {
 	// actually requiring them.
 	Device bool
 
-	// Payload records that the endpoint is known to carry a payload when it
-	// answers. An endpoint with Payload true that returns code 0 carrying
-	// nothing has refused, and this field is the only thing that makes that
+	// Payload records that the endpoint carries a payload when it answers. An
+	// endpoint with Payload true that returns code 0 carrying nothing has
+	// refused, and this field is the only thing that makes that
 	// distinguishable. See 02_extraction.md section 2.1.
+	//
+	// It is not the same question as Expect, and conflating the two is easy.
+	// Payload is about the endpoint: does a real answer from here have
+	// something in it. Expect is about today: what does a correct request get
+	// right now. upstat has Payload true and Expect refused_silent, and both
+	// are accurate. It carries view and like totals when it answers, and it
+	// does not answer anonymously. That pair is exactly what makes its silence
+	// nameable rather than something to shrug at.
 	Payload bool
 
 	// Expect is the state a correctly formed request produces today. It is
 	// empty for the rows that answer, and set for the three that do not, so
 	// that a probe reports drift when one of them starts answering as well as
 	// when one of them stops.
-	Expect string
+	Expect Status
 
 	// Note explains any row that would otherwise look like a mistake.
 	Note string
@@ -147,11 +154,12 @@ func Matrix() []Requirement {
 			Payload: true,
 		},
 		{
-			Name:   "x/space/upstat",
-			Base:   "https://api.bilibili.com/x/space/upstat",
-			Params: vals("mid", mid),
-			Expect: stateRefusedSilent,
-			Note:   "answers code 0 with an empty object, signed or not. Payload is false because it has never carried one anonymously",
+			Name:    "x/space/upstat",
+			Base:    "https://api.bilibili.com/x/space/upstat",
+			Params:  vals("mid", mid),
+			Payload: true,
+			Expect:  stateRefusedSilent,
+			Note:    "answers code 0 with an empty object, signed or not. It carries a creator's view and like totals when it answers, which is why the empty object is a refusal and why bili user prints zeros today",
 		},
 		{
 			Name:    "x/polymer/web-dynamic/v1/feed/space",
@@ -212,11 +220,12 @@ func Matrix() []Requirement {
 			Payload: true,
 		},
 		{
-			Name:   "x/v3/fav/folder/created/list-all",
-			Base:   "https://api.bilibili.com/x/v3/fav/folder/created/list-all",
-			Params: vals("up_mid", mid),
-			Expect: stateRefusedSilent,
-			Note:   "answers code 0 with a null payload, signed or not. Reading a folder by media_id still works",
+			Name:    "x/v3/fav/folder/created/list-all",
+			Base:    "https://api.bilibili.com/x/v3/fav/folder/created/list-all",
+			Params:  vals("up_mid", mid),
+			Payload: true,
+			Expect:  stateRefusedSilent,
+			Note:    "answers code 0 with a null payload, signed or not. It carries the folder list when it answers, so the null is a refusal rather than a user with no folders. Reading a folder by media_id still works",
 		},
 		{
 			Name:    "room/v1/Room/get_info",
@@ -252,7 +261,7 @@ func Matrix() []Requirement {
 			Params:  vals("sid", "1"),
 			Payload: false,
 			Expect:  stateNotFound,
-			Note:    "answers 4511001 for every sid tried, including 1 and 999999999, so the code is a constant and not an echo. Payload is false because nothing anonymous reaches this surface",
+			Note:    "answers 4511001 for every sid tried, including 1 and 999999999, so the code is a constant and not an echo. Payload is false because this surface has never been observed answering, so there is nothing measured to record",
 		},
 	}
 }
@@ -266,8 +275,8 @@ type Observation struct {
 	// WithSignature is only measured for rows recorded as needing one, because
 	// a second live request against an endpoint that already answered buys
 	// nothing and costs bilibili a request.
-	Bare          string `json:"bare"`
-	WithSignature string `json:"signed,omitempty"`
+	Bare          Status `json:"bare"`
+	WithSignature Status `json:"signed,omitempty"`
 
 	// Retried records that the row refused once and was asked again after a
 	// pause, which is the only way to tell a site change from probe pressure.
@@ -326,7 +335,7 @@ func (c *Client) Probe(ctx context.Context, r Requirement) Observation {
 
 	if want := r.expect(); o.Bare != want {
 		o.Moved = true
-		o.Reason = "recorded as answering " + want + " and it answered " + o.Bare
+		o.Reason = "recorded as answering " + string(want) + " and it answered " + string(o.Bare)
 	}
 	return o
 }
@@ -422,7 +431,7 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 
 // expect is the state this row should be in. Rows that answer say nothing and
 // mean ok, which keeps the common case out of the table.
-func (r Requirement) expect() string {
+func (r Requirement) expect() Status {
 	if r.Expect == "" {
 		return stateOK
 	}
@@ -431,72 +440,65 @@ func (r Requirement) expect() string {
 
 // The response states. M2 moves these into the client itself and makes every
 // request go through them; here they are what Probe reports.
+// The probe reports the same seven states the client sorts live responses into,
+// because they are the same question asked from two directions. status.go owns
+// them; this file used to carry a second copy and the two could disagree.
 const (
-	stateOK            = "ok"
-	stateRefusedSilent = "refused_silent"
-	stateRisk          = "risk"
-	stateForbidden     = "forbidden"
-	stateNotFound      = "not_found"
-	stateRate          = "rate"
-	stateError         = "error"
+	stateOK            = StatusOK
+	stateRefusedSilent = StatusRefusedSilent
+	stateRisk          = StatusRisk
+	stateForbidden     = StatusForbidden
+	stateNotFound      = StatusNotFound
+	stateRate          = StatusRate
+	stateError         = StatusError
 )
 
 // observe makes one request and names what came back. It deliberately does not
 // decode into a record type: the question here is what state the response is
 // in, and answering that has to work for an endpoint whose payload shape this
 // tool does not model.
-func (c *Client) observe(ctx context.Context, r Requirement, params url.Values, sign bool) string {
-	body, err := c.Raw(ctx, r.Base, params, sign)
+// observe makes one request and reports the state it came back in.
+//
+// The classification is the client's own, not a second copy written for the
+// probe. That matters more than it looks: a drift job that decides for itself
+// what a refusal is can only tell you that the probe's idea of the site
+// changed. This one tells you that the tool's idea of the site changed, which
+// is the thing anybody actually wants to know.
+func (c *Client) observe(ctx context.Context, r Requirement, params url.Values, sign bool) Status {
+	res, err := c.rawResult(ctx, r.Base, params, sign)
 	if err != nil {
 		return classifyErr(err)
 	}
 
 	// The danmaku segment endpoint is protobuf. There is no envelope to read,
-	// so the only question that can be asked is whether bytes came back.
+	// so the only questions available are whether it was intercepted and
+	// whether any bytes came back.
 	if strings.HasSuffix(r.Base, ".so") {
-		if len(body) == 0 {
-			return stateRefusedSilent
-		}
-		return stateOK
+		st, _ := classifyBinary(res)
+		return st
 	}
 
-	var env envelope
-	if err := json.Unmarshal(body, &env); err != nil {
-		// A body that is not JSON on a JSON endpoint is the HTML interstitial
-		// risk control serves with the 412.
-		return stateRisk
-	}
-	if env.Code != 0 {
-		return classifyCode(env.Code)
-	}
-	if p := env.payload(); len(p) == 0 || string(p) == "null" || string(p) == "{}" || string(p) == "[]" {
-		return stateRefusedSilent
-	}
-	return stateOK
+	st, _, _ := classify(res)
+	return st
 }
 
-func classifyCode(code int) string {
-	switch code {
-	case -352:
-		return stateRisk
-	case -403:
-		return stateForbidden
-	case -404, 4511001:
-		return stateNotFound
-	case -509:
-		return stateRate
-	default:
-		return stateError
-	}
+func classifyCode(code int) Status {
+	st, _ := statusForCode(code)
+	return st
 }
 
 // classifyErr names the state behind a transport level failure. rawGet reports
 // these as an APIError with a zero code and the HTTP status in the message,
 // which is why this reads the status rather than the code.
-func classifyErr(err error) string {
+func classifyErr(err error) Status {
 	var ae *APIError
-	if errors.As(err, &ae) && ae.Code != 0 {
-		return classifyCode(ae.Code)
+	if errors.As(err, &ae) {
+		if ae.Status != "" && ae.Status != StatusError {
+			return ae.Status
+		}
+		if ae.Code != 0 {
+			return classifyCode(ae.Code)
+		}
 	}
 	switch httpStatus(err.Error()) {
 	case http.StatusPreconditionFailed:

@@ -194,11 +194,47 @@ func (c *Client) throttle(ctx context.Context) error {
 // success envelope so decoders yield no records rather than erroring.
 var dryRunBody = []byte(`{"code":0,"message":"dry-run","data":null,"result":null}`)
 
-// rawGet performs a GET with retries and returns the decompressed body.
+// result is one HTTP response as it arrived, before anything is decoded.
+//
+// The status line and the content type are carried alongside the body because
+// classification needs them and because collapsing them into an error string
+// loses the only evidence that separates an interception from a bad gateway.
+type result struct {
+	body        []byte
+	status      int
+	contentType string
+	base        string // endpoint without query parameters, for the payload rule
+}
+
+// rawGet performs a GET with retries and returns the decompressed body. It is
+// the shape the surfaces that are not JSON still want: the article HTML page,
+// the legacy danmaku XML, the suggest endpoint on its own host.
 func (c *Client) rawGet(ctx context.Context, rawURL string, headers map[string]string) ([]byte, error) {
+	res, err := c.fetch(ctx, rawURL, headers)
+	if err != nil {
+		return nil, err
+	}
+	if res.status < 200 || res.status >= 300 {
+		st, known := statusForHTTP(res.status)
+		return nil, httpError(st, known, res)
+	}
+	return res.body, nil
+}
+
+// fetch performs a GET with retries and returns the whole response.
+//
+// Which statuses are retried is a decision, not an oversight. A 429 or a 5xx is
+// worth asking again, because the server said it was busy. An HTTP 412 is risk
+// control saying no to this request from this address, and asking four more
+// times in quick succession is the one response guaranteed to make it worse, so
+// it returns immediately.
+func (c *Client) fetch(ctx context.Context, rawURL string, headers map[string]string) (result, error) {
+	// The payload rule is keyed by the endpoint, so the query string comes off
+	// once here rather than at every call site.
+	base, _, _ := strings.Cut(rawURL, "?")
 	if c.cfg.DryRun {
 		_, _ = fmt.Fprintf(dryRunOut, "GET %s\n", rawURL)
-		return dryRunBody, nil
+		return result{body: dryRunBody, status: http.StatusOK, contentType: "application/json", base: base}, nil
 	}
 	var last error
 	for attempt := 0; attempt <= c.cfg.Retries; attempt++ {
@@ -206,16 +242,16 @@ func (c *Client) rawGet(ctx context.Context, rawURL string, headers map[string]s
 			d := c.cfg.Rate * time.Duration(attempt*attempt+1)
 			select {
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return result{}, ctx.Err()
 			case <-time.After(d):
 			}
 		}
 		if err := c.throttle(ctx); err != nil {
-			return nil, err
+			return result{}, err
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
-			return nil, err
+			return result{}, err
 		}
 		req.Header.Set("User-Agent", c.cfg.UserAgent)
 		req.Header.Set("Referer", Referer)
@@ -242,7 +278,7 @@ func (c *Client) rawGet(ctx context.Context, rawURL string, headers map[string]s
 				if secs, e := time.ParseDuration(ra + "s"); e == nil {
 					select {
 					case <-ctx.Done():
-						return nil, ctx.Err()
+						return result{}, ctx.Err()
 					case <-time.After(secs):
 					}
 				}
@@ -255,13 +291,31 @@ func (c *Client) rawGet(ctx context.Context, rawURL string, headers map[string]s
 			last = err
 			continue
 		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			last = fmt.Errorf("HTTP %d from %s", resp.StatusCode, rawURL)
-			continue
+		res := result{
+			body:        body,
+			status:      resp.StatusCode,
+			contentType: resp.Header.Get("Content-Type"),
+			base:        base,
 		}
-		return body, nil
+		// Everything that is left is handed back for classification, including
+		// the non 2xx statuses. A 412 carries the HTML interstitial that says
+		// what happened, and throwing the body away to build an error string
+		// would discard the only useful part of the response.
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			if _, known := statusForHTTP(resp.StatusCode); !known {
+				last = fmt.Errorf("HTTP %d from %s", resp.StatusCode, rawURL)
+				continue
+			}
+		}
+		return res, nil
 	}
-	return nil, &APIError{Code: 0, Message: last.Error(), Hint: "request failed after retries", Kind: ErrNetwork}
+	return result{}, &APIError{
+		Code:    0,
+		Message: last.Error(),
+		Hint:    "request failed after retries",
+		Kind:    ErrNetwork,
+		Status:  StatusError,
+	}
 }
 
 func readBody(resp *http.Response) ([]byte, error) {
@@ -303,33 +357,45 @@ func buildURL(base string, params url.Values) string {
 	return base + "?" + params.Encode()
 }
 
-// getJSON fetches base+params, unwraps the envelope, and decodes data into out.
-// It uses the on-disk cache when enabled.
+// getJSON fetches base+params, classifies the response, and decodes the payload
+// into out. It uses the on-disk cache when enabled.
 func (c *Client) getJSON(ctx context.Context, base string, params url.Values, out any) error {
 	c.ensureBuvid(ctx)
 	full := buildURL(base, params)
-	if c.cache != nil && !c.cfg.DryRun {
+	cacheable := c.cache != nil && !c.cfg.DryRun
+
+	if cacheable {
 		if b, ok := c.cache.get(full); ok {
-			return decodeEnvelope(b, out)
+			// A cache written by this version holds answers only. One written
+			// by an older version can hold a refusal, and the useful thing to
+			// do with it is ignore it and ask again rather than replay it for
+			// the rest of the TTL.
+			st, err := decodeResult(result{body: b, status: http.StatusOK, contentType: "application/json", base: base}, out)
+			if !st.Refused() && err == nil {
+				return nil
+			}
 		}
 	}
-	body, err := c.rawGet(ctx, full, nil)
+
+	res, err := c.fetch(ctx, full, nil)
 	if err != nil {
 		return err
 	}
-	if c.cache != nil && !c.cfg.DryRun {
-		c.cache.put(full, body)
+	st, err := decodeResult(res, out)
+	if cacheable && st.Cacheable() {
+		c.cache.put(full, res.body)
 	}
-	return decodeEnvelope(body, out)
+	return err
 }
 
 // getJSONNoCache always hits the network and never caches.
 func (c *Client) getJSONNoCache(ctx context.Context, base string, params url.Values, out any) error {
-	body, err := c.rawGet(ctx, buildURL(base, params), nil)
+	res, err := c.fetch(ctx, buildURL(base, params), nil)
 	if err != nil {
 		return err
 	}
-	return decodeEnvelope(body, out)
+	_, err = decodeResult(res, out)
+	return err
 }
 
 // getJSONSigned WBI-signs the params then behaves like getJSON.
@@ -341,36 +407,67 @@ func (c *Client) getJSONSigned(ctx context.Context, base string, params url.Valu
 	return c.getJSON(ctx, base, signed, out)
 }
 
-func decodeEnvelope(body []byte, out any) error {
-	var env envelope
-	if err := json.Unmarshal(body, &env); err != nil {
-		return fmt.Errorf("decode envelope: %w", err)
-	}
-	if env.Code != 0 {
-		return apiError(env.Code, env.Message)
+// decodeResult classifies res and, only if it answered, decodes the payload
+// into out. The classification is returned as well as the error, because the
+// caller needs to know whether the response was worth caching and an error
+// value alone cannot say that: an empty result is not an error and a
+// refused_silent one is.
+func decodeResult(res result, out any) (Status, error) {
+	st, env, apiErr := classify(res)
+	if apiErr != nil {
+		return st, apiErr
 	}
 	payload := env.payload()
 	if out == nil || len(payload) == 0 {
-		return nil
+		return st, nil
 	}
 	if err := json.Unmarshal(payload, out); err != nil {
-		return fmt.Errorf("decode data: %w", err)
+		return StatusError, fmt.Errorf("decode data: %w", err)
 	}
-	return nil
+	return st, nil
+}
+
+// decodeEnvelope classifies and decodes a body that arrived over a 200 with a
+// JSON content type. It is the shape callers that already hold bytes want.
+func decodeEnvelope(body []byte, out any) error {
+	_, err := decodeResult(result{body: body, status: http.StatusOK, contentType: "application/json"}, out)
+	return err
 }
 
 // Raw fetches base+params and returns the untouched response body (the full
 // envelope). Used by --raw.
 func (c *Client) Raw(ctx context.Context, base string, params url.Values, sign bool) ([]byte, error) {
+	res, err := c.rawResult(ctx, base, params, sign)
+	if err != nil {
+		return nil, err
+	}
+	// --raw hands back the bytes untouched, but not silently: a caller piping
+	// this into jq should be told the server sent an HTML interception rather
+	// than being left to work it out from the parse error.
+	if res.status < 200 || res.status >= 300 {
+		st, known := statusForHTTP(res.status)
+		return nil, httpError(st, known, res)
+	}
+	if isHTML(res.contentType) {
+		return nil, riskError(res)
+	}
+	return res.body, nil
+}
+
+// rawResult fetches base+params and returns the whole unclassified response.
+//
+// Unlike Raw it does not turn a non 2xx into an error, because its caller is
+// the probe, whose entire job is to look at what came back and name it.
+func (c *Client) rawResult(ctx context.Context, base string, params url.Values, sign bool) (result, error) {
 	c.ensureBuvid(ctx)
 	if sign {
 		signed, err := c.signWBI(ctx, params)
 		if err != nil {
-			return nil, err
+			return result{}, err
 		}
 		params = signed
 	}
-	return c.rawGet(ctx, buildURL(base, params), nil)
+	return c.fetch(ctx, buildURL(base, params), nil)
 }
 
 // Nav returns login state and the current WBI keys. The nav endpoint returns

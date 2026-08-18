@@ -145,8 +145,17 @@ in its own right and separate from signing: `bili rank` sends no signature and
 works, and refuses without the buvid cookies.
 
 **The envelope.** Responses arrive as `{code, message, ttl, data}` (or `result`
-for bangumi endpoints). `bili` unwraps it and maps bilibili's risk-control codes
-to readable errors.
+for bangumi endpoints). `bili` sorts every response into one of seven states
+before it decodes a byte of the payload, and only then unwraps it.
+
+That extra step exists because `code: 0` is not success on this API. Two
+endpoints answer with the success code, the success message, and nothing in
+them, which a client that reads the code and starts decoding cannot tell apart
+from a user whose favorites folder is genuinely empty. `bili` can, because it
+records which endpoints carry a payload when they answer, so `bili favorites`
+names the refusal instead of printing `[]`. Risk control's HTML interception is
+recognised as a refusal too, rather than surfacing as a JSON parse error, and no
+refusal is ever written to the cache.
 
 **IDs.** Videos carry both an `avNNN` number and a `BV` string. `bili` converts
 between them, follows `b23.tv` short links, and classifies any id or URL you

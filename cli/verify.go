@@ -90,9 +90,9 @@ func newVerifyCmd(a *App) *cobra.Command {
 }
 
 func describe(o bili.Observation) string {
-	s := o.Bare
+	s := string(o.Bare)
 	if o.WithSignature != "" {
-		s += " / signed " + o.WithSignature
+		s += " / signed " + string(o.WithSignature)
 	}
 	if o.Retried {
 		s += " (second pass)"

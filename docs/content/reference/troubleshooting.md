@@ -41,11 +41,34 @@ The object does not exist, or was removed or made private. Double-check the id
 with `bili id <thing>`, which shows how bili classified it. A video that was taken
 down returns -404 even though the BV id is well-formed.
 
-## A favorites list comes back empty
+## "refused" on an endpoint that returned success
 
-Favorite folders are private by default site-wide. `bili favorites <mid>` on an
-account that keeps them private returns an empty list, not an error. That is the
-owner's privacy setting.
+This is bilibili answering `code: 0` with the message `OK` and no payload at
+all, which is a refusal wearing a success code. bili names it rather than
+handing you an empty list:
+
+```console
+$ bili favorites 946974
+Refused: this endpoint always carries a payload when it answers, so this is a
+refusal and not an empty result. It refuses anonymous callers, and only a
+logged-in cookie via --cookie or BILI_COOKIE changes that (code 0 with no
+payload) [api.bilibili.com/x/v3/fav/folder/created/list-all]
+```
+
+Two endpoints do this today. `x/v3/fav/folder/created/list-all`, behind `bili
+favorites <mid>`, and `x/space/upstat`, which carries a creator's total views
+and likes. Both answer normally with a logged-in cookie.
+
+An older version of this page said an empty favorites list was the owner's
+privacy setting. That was wrong. The endpoint answers the same way for every
+mid measured, public folders included, and reading one folder directly by its
+`ml` id still works while anonymous.
+
+The distinction bili is drawing here is not visible in the response. A folder
+with nothing in it and an endpoint refusing to tell you both have no records in
+them. It is drawn from a table of which endpoints carry a payload when they
+answer, which is measured rather than assumed, and which `bili verify --live`
+re-measures weekly.
 
 ## Localized fields are in Chinese
 
