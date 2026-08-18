@@ -76,11 +76,19 @@ jobs:
           cosign-release: "v2.6.3"
       - uses: anchore/sbom-action/download-syft@v0.24.0
 
+      # The release notes are written, not generated. A list of commit
+      # subjects says what was done and never says what it means to somebody
+      # who has the previous version installed, and this release changes exit
+      # codes from two values to eight. A tag with no section in CHANGELOG.md
+      # fails here, before anything is published.
+      - name: Extract the release notes for this tag
+        run: scripts/release_notes.sh "${GITHUB_REF_NAME}" > /tmp/release-notes.md
+
       - uses: goreleaser/goreleaser-action@v7.2.2
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean
+          args: release --clean --release-notes=/tmp/release-notes.md
         env:
           # Creating the release and pushing the GHCR image use the built-in
           # token. The package-manager publish steps each read their own secret;

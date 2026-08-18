@@ -53,6 +53,7 @@ archives:
     files:
       - LICENSE
       - README.md
+      - CHANGELOG.md
 
 nfpms:
   # One nfpm definition emits the deb, rpm, and apk for every Linux build. bili

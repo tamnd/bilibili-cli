@@ -2,6 +2,8 @@ package bili
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"net/url"
 	"testing"
 	"time"
@@ -73,3 +75,55 @@ func TestAddDeviceParams(t *testing.T) {
 		}
 	}
 }
+
+// A cached mixin key means no nav request, and that has to hold on the injected
+// clock as well as the real one.
+//
+// It did not. The freshness window was measured with time.Since while the
+// stored moment came from the injected clock, so a caller who pinned the clock
+// got a cache that never hit and a nav fetch on every signed call. The test
+// above hid it by passing anyway: it reached the real API, got a real key, and
+// checked a signature computed from the key it had set rather than the one it
+// used. Denying the network is what surfaced it.
+func TestACachedMixinKeyCostsNoRequest(t *testing.T) {
+	c := NewClient(DefaultConfig())
+	c.SetNow(func() time.Time { return time.Unix(1700000000, 0) })
+	c.hc.Transport = roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		return nil, fmt.Errorf("the client asked for %s and a cached key needs no requests", r.URL)
+	})
+	c.wbi.mixin = testMixin
+	c.wbi.fetched = c.now()
+
+	got, err := c.ensureWBI(context.Background())
+	if err != nil {
+		t.Fatalf("ensureWBI: %v", err)
+	}
+	if got != testMixin {
+		t.Errorf("ensureWBI = %q, want the cached %q", got, testMixin)
+	}
+}
+
+// And a key older than the window is refetched, so the fix above did not turn
+// the freshness check off.
+func TestAStaleMixinKeyIsRefetched(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Retries = 0 // the refetch is expected to fail, and waiting out four backoffs proves nothing
+	c := NewClient(cfg)
+	c.SetNow(func() time.Time { return time.Unix(1700000000, 0) })
+	c.hc.Transport = roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		return nil, fmt.Errorf("asked for %s", r.URL)
+	})
+	c.wbi.mixin = testMixin
+	c.wbi.fetched = c.now().Add(-7 * time.Hour)
+
+	if _, err := c.ensureWBI(context.Background()); err == nil {
+		t.Error("a key seven hours old was served from the cache")
+	}
+}
+
+// roundTripperFunc is a transport that answers with whatever the function says,
+// which here is always a failure. A test that must not reach the network is
+// better served by a transport that cannot than by trusting that it will not.
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

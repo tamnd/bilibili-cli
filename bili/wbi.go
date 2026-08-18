@@ -57,7 +57,12 @@ func keyStem(u string) string {
 // ensureWBI fetches and caches the current WBI mixin key.
 func (c *Client) ensureWBI(ctx context.Context) (string, error) {
 	c.wbi.mu.Lock()
-	if c.wbi.mixin != "" && time.Since(c.wbi.fetched) < 6*time.Hour {
+	// The freshness window is measured on the injected clock, not on
+	// time.Since. SetNow exists so a caller can pin the clock, and a cache that
+	// reads the real clock while it was stored against a pinned one is a cache
+	// that never hits: the stored moment is years away from wall time, so every
+	// call refetches nav.
+	if c.wbi.mixin != "" && c.now().Sub(c.wbi.fetched) < 6*time.Hour {
 		k := c.wbi.mixin
 		c.wbi.mu.Unlock()
 		return k, nil
@@ -73,7 +78,7 @@ func (c *Client) ensureWBI(ctx context.Context) (string, error) {
 	mk := mixinKey(img, sub)
 
 	c.wbi.mu.Lock()
-	c.wbi.imgKey, c.wbi.subKey, c.wbi.mixin, c.wbi.fetched = img, sub, mk, time.Now()
+	c.wbi.imgKey, c.wbi.subKey, c.wbi.mixin, c.wbi.fetched = img, sub, mk, c.now()
 	c.wbi.mu.Unlock()
 	return mk, nil
 }
