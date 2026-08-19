@@ -22,11 +22,18 @@ Almost every endpoint returns the same envelope:
 { "code": 0, "message": "0", "ttl": 1, "data": { ... } }
 ```
 
-A `code` of `0` means success and `data` carries the payload. A non-zero `code`
-is an error, and bili maps the common ones to clear messages (not found, rate
-limited, login required, risk control). The bangumi endpoints are the one
-exception: they put the payload in `result` instead of `data`, and bili handles
-that for you.
+A non-zero `code` is an error, and bili maps the common ones to clear messages
+(not found, rate limited, login required, risk control). The bangumi endpoints
+put the payload in `result` instead of `data`, and bili handles that for you.
+
+A `code` of `0` is where it gets interesting, because on this API it does not
+mean success. Two endpoints answer with the success code, the success message,
+and nothing inside, which is a refusal wearing a success code and is
+indistinguishable from an empty result to a client that reads the code and
+starts decoding. bili sorts every response into one of seven states before it
+decodes a byte, using a recorded table of which endpoints carry a payload when
+they answer, so a refusal is reported as a refusal rather than handed to you as
+an empty list. That distinction is what the exit codes are for.
 
 ## The parts that make it awkward
 
@@ -43,6 +50,8 @@ Calling the API by hand runs into four things bili does for you:
   `md`. bili accepts any of them, plus full URLs, and normalizes before calling.
 - **danmaku.** Bullet-chat is delivered as protobuf, not JSON. bili decodes it
   into plain rows with timing, mode, color, and text.
+- **A refusal that looks like an answer.** See above. It is the reason this tool
+  has eight exit codes instead of two.
 
 ## What needs a login
 

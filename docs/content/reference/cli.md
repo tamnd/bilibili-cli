@@ -15,8 +15,8 @@ through the shared [output formatter](/reference/output/).
 | `id <thing>` | any id or URL | Classify and normalize an id or URL, and print its canonical forms |
 | `video <id>...` | `BV`/`av`/URL, or `-` | Resolve one or more videos to full metadata |
 | `related <id>` | a video | Related videos for a video |
-| `streams <id>` | a video | Playable stream URLs for a video part |
-| `danmaku <id>` | a video | Bullet-chat (danmaku) for a video part |
+| `streams <id>` | a video | Playable stream URLs for a video part; `-p` picks the part, `--quality` the level |
+| `danmaku <id>` | a video | Bullet-chat (danmaku) for a video part; `-p` picks the part |
 
 ## Downloading
 
@@ -68,9 +68,9 @@ Neither binary is bundled. See [downloading audio](/guides/videos/#download-audi
 |---|---|---|
 | `search <query>` | text | Search videos, users, bangumi, live rooms, or articles |
 | `suggest <term>` | text | Search autosuggest terms |
-| `trending` | — | Current hot-search terms |
-| `popular` | — | The popular feed, or a weekly selection issue |
-| `rank` | — | The leaderboard, optionally for one partition |
+| `trending` | none | Current hot-search terms |
+| `popular` | none | The popular feed, or a weekly selection issue with `--weekly` |
+| `rank` | none | The leaderboard, optionally for one partition with `--tid` |
 
 ## Datasets
 
@@ -85,8 +85,8 @@ Neither binary is bundled. See [downloading audio](/guides/videos/#download-audi
 |---|---|
 | `nav` | Login state and current WBI keys (debug) |
 | `verify --live` | Re-measure the endpoint requirement matrix against the live API |
-| `config show` | Print resolved configuration and important paths |
-| `cache info` / `cache clear` | Inspect or clear the on-disk response cache |
+| `config show` / `config path` | Print resolved configuration, or just the directories |
+| `cache stat` / `cache path` / `cache clear` | Size and location of the on-disk response cache, or empty it |
 | `version` | Print version, commit, and build date |
 | `completion <shell>` | Generate a shell completion script |
 
@@ -96,7 +96,7 @@ Available on every command:
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `-o, --output` | auto | `table`, `json`, `jsonl`, `csv`, `tsv`, `yaml`, `url`, `raw` |
+| `-o, --output` | auto | `list`, `table`, `markdown`, `json`, `jsonl`, `csv`, `tsv`, `url`, `raw` |
 | `-n, --limit` | `0` | Maximum records; `0` is unlimited |
 | `--fields` | all | Comma-separated columns to keep and order |
 | `--template` | none | Go `text/template` applied per record |
@@ -108,13 +108,19 @@ Available on every command:
 | `--cookie-file` | none | Path to a file holding the cookie header |
 | `--lang` | `zh-CN` | Locale for localized fields |
 | `--rate` | `350ms` | Minimum delay between requests |
+| `--timeout` | `30s` | Per-request timeout |
+| `-j, --workers` | `4` | Concurrency for the commands that fan out |
 | `--retries` | `4` | Retry attempts on 429 and 5xx. A risk refusal is never retried |
 | `--cache` / `--no-cache` | on | Use or bypass the on-disk response cache |
 | `--cache-ttl` | `1h` | Cache freshness window |
 | `--proxy` | none | HTTP or SOCKS proxy URL |
 | `--dry-run` | off | Print the requests that would be made, without calling |
 | `--color` | auto | `auto`, `always`, or `never` |
+| `--user-agent` | a desktop Chrome string | Override the User-Agent. Risk control reads the platform token out of it, so most overrides make refusals more likely |
+| `--raw` | off | Print each record as pretty-printed JSON, whatever `-o` says |
 | `-q, --quiet` | off | Suppress progress output on stderr |
+| `-v, --verbose` | off | More detail on stderr; repeatable |
+| `-y, --yes` | off | Assume yes to prompts |
 
 ## Exit codes
 

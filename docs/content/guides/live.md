@@ -24,12 +24,15 @@ bili live 5440 -o json
 
 ## Browsing by area
 
-Without a room id, `live` browses the directory. Filter by area and page through
-the rooms that are live now:
+With `--browse` instead of a room id, `live` reads the directory. `--area` picks
+the parent area, and the rows are the rooms that are live right now:
 
 ```bash
-bili live --area 1        # rooms in a parent area
-bili live --area 1 -n 20  # cap the count
+bili live --browse --area 1        # rooms in a parent area
+bili live --browse --area 1 -n 20  # cap the count
 ```
+
+`--browse` is required. Called with neither a room id nor `--browse` nor
+`--uid`, `live` says so rather than guessing which one you meant.
 
 Each row is a room you can then open directly with `bili live <room>`.

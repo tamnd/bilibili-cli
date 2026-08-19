@@ -8,9 +8,19 @@ weight: 20
 
 Every [release](https://github.com/tamnd/bilibili-cli/releases) carries archives
 for Linux, macOS, and Windows on amd64 and arm64, plus deb, rpm, and apk
-packages for Linux. Download, unpack, put `bili` on your `PATH`, done. The
-`checksums.txt` on each release is signed with keyless
-[cosign](https://docs.sigstore.dev/) if you want to verify before running.
+packages for Linux. Download, unpack, put `bili` on your `PATH`, done. Each
+archive ships with a CycloneDX SBOM, and the `checksums.txt` is signed with
+keyless [cosign](https://docs.sigstore.dev/) if you want to verify before
+running:
+
+```bash
+cosign verify-blob \
+  --certificate checksums.txt.pem \
+  --signature checksums.txt.sig \
+  --certificate-identity-regexp 'https://github.com/tamnd/bilibili-cli' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+```
 
 ## With Go
 

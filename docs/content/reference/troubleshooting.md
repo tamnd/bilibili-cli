@@ -21,13 +21,24 @@ bili dynamic <id>
 See [configuration](/reference/configuration/) for how cookies are supplied. This
 is an account/IP gate, not something a different request shape gets around.
 
-## "rate limited" (-509) or "intercepted" (-412)
+## "rate limited" (-509)
 
-You are going too fast. bili already backs off and retries these, and keeps a
-`--rate` gap between calls, but a tight loop on an aggressively throttled endpoint
-(search and a creator's video list are the touchy ones) can still hit them. Raise
-`--rate`, lower concurrency, or let the cache absorb repeats. A single transient
-hit usually clears on the built-in retry.
+You are going too fast. bili backs off and retries this one, and keeps a
+`--rate` gap between calls, but a tight loop on an aggressively throttled
+endpoint (search and a creator's video list are the touchy ones) can still
+outrun it. Raise `--rate`, lower concurrency, or let the cache absorb repeats. A
+single transient hit usually clears on the built-in retry, and one that outlives
+the retries exits 6, which is the code that clears by waiting.
+
+## "intercepted" (-412)
+
+Despite the number, this is risk control and not a rate limit. It is the
+envelope form of the HTTP 412 interstitial, it exits 2, and it is never
+retried: retrying an address that has just been turned away is the worst
+available response to it. A logged-in cookie is what usually clears it. Note
+that `--user-agent` makes this more likely rather than less, because risk
+control reads the platform token out of the User-Agent and most overrides fail
+it.
 
 ## "login required" (-101)
 

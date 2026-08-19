@@ -48,8 +48,10 @@ run() {
 }
 
 # run_optional NAME -- args... : passes on a clean exit even with no output.
-# Used for endpoints whose result is legitimately empty for many accounts
-# (favorites are private by default site-wide).
+# Used for endpoints that refuse an anonymous caller as a matter of course. The
+# folder listing is the one that does this: it answers code 0 with no payload,
+# which bili classifies as a refusal and exits 4 on, and only a logged-in cookie
+# changes it. A smoke run without a cookie should report that rather than fail.
 run_optional() {
   local name="$1"; shift
   [ "$1" = "--" ] && shift
@@ -117,6 +119,7 @@ run_optional favorites -- favorites 2 -o jsonl
 run live-browse     -- live --browse --area 1 -n 3 -o jsonl
 run live-room       -- live 1 -o jsonl
 run bangumi         -- bangumi ss33802 -n 3 -o jsonl
+run audio           -- audio au1000000 -o jsonl
 
 # --- anti-bot gated (SKIP on -352 from a fresh IP) ---
 DYN="$("$BILI" dynamics 2 -n 1 -o jsonl --fields id 2>/dev/null | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')"

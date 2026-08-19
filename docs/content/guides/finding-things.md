@@ -24,8 +24,9 @@ bili search lofi --type video      # restrict to one type
 bili search lofi --type user
 ```
 
-Restrict with `--type` to `video`, `user`, `bangumi`, `live`, or `article`. Page
-through results with `--page`, and cap them with `-n`.
+Restrict with `--type` to `video`, `user`, `bangumi`, `film`, `live_room` (which
+also answers to `live`), or `article`. Page through results with `--page`, and
+cap them with `-n`.
 
 The natural next step is to resolve every hit to its full record:
 
@@ -33,9 +34,15 @@ The natural next step is to resolve every hit to its full record:
 bili search lofi -o url | bili video -
 ```
 
-Search is one of the more aggressively rate-limited endpoints, so a fast loop may
-occasionally see a transient risk-control error; bili retries, and `--rate`
-keeps a polite gap between calls.
+Search is one of the more aggressively rate-limited endpoints, so a fast loop
+can see a rate limit or a risk control refusal. bili retries the rate limit and
+never retries the refusal, because asking again four times is the worst possible
+answer to being turned away. Raise `--rate` and let the cache absorb repeats.
+
+Worth knowing before you write a loop around it: this endpoint reports 1000
+results and 50 pages for every query measured, including nonsense ones, so those
+counts are a constant and not an answer, and a search that genuinely matched
+nothing is not something the API can express.
 
 ## Autosuggest and hot search
 
@@ -54,16 +61,16 @@ bili popular           # the popular (综合热门) feed
 bili popular -n 20
 ```
 
-`popular` reads the general popular feed. With the right flag it also reads a
-specific issue of the weekly selection (每周必看), bilibili's curated weekly list.
+`popular` reads the general popular feed. `--weekly <n>` reads a specific issue
+of the weekly selection (每周必看) instead, bilibili's curated weekly list.
 
 ## The leaderboard
 
 ```bash
 bili rank              # the overall leaderboard
-bili rank --partition <id>   # one category's leaderboard
+bili rank --tid 129    # one category's leaderboard, 129 being dance
 ```
 
-`rank` reads the排行榜 leaderboard, optionally scoped to a single partition
-(category). Each row is a video, so it pipes into `video` and `crawl` like any
-other list.
+`rank` reads the 排行榜 leaderboard, optionally scoped to a single partition
+(category) by its numeric id. Each row is a video, so it pipes into `video` and
+`crawl` like any other list.

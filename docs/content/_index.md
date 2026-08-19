@@ -19,6 +19,7 @@ bili comments BV17x411w7KC -o jsonl  # every comment and reply, one per line
 bili search lofi -o url              # the watch URLs of matching videos
 bili discover BV17x411w7KC --depth 2 # walk the related graph, one node per line
 bili crawl BV17x411w7KC --out ./data # the connected graph, into JSONL files
+bili download BV17x411w7KC           # its audio, through BBDown
 ```
 
 It runs anonymously against `api.bilibili.com` over plain HTTPS, so there is
@@ -41,6 +42,12 @@ nothing to sign up for. The binary is pure Go with no runtime dependencies.
   record per node so you can explore or pipe it.
 - **Crawl the graph.** `bili crawl` walks outward from seed ids into per-type
   JSONL files, following related videos and optionally comments and danmaku.
+- **Download the audio.** `bili download` hands the transfer to BBDown, with
+  ffmpeg transcoding when you ask for `mp3`, `flac` or `wav`. Neither binary is
+  bundled and a missing one is reported before the download starts.
+- **Tell a refusal from an empty result.** A response that carries nothing on an
+  endpoint that always carries something is reported as the refusal it is, with
+  its own exit code, rather than as an empty list.
 
 ## Where to go next
 
