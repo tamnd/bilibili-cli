@@ -39,9 +39,13 @@ bili favorites 2            # the folders (each has an `ml` id)
 bili favorite ml123         # the videos inside one folder
 ```
 
-Most folders are private by default, so a `favorites` call on an account that
-keeps them private returns an empty list rather than an error. That is the site's
-privacy setting, not a problem with the command.
+`favorites` is the endpoint that refuses anonymous callers outright. It answers
+`code: 0` with no payload at all, on an endpoint that always carries one when it
+answers, which is a refusal wearing a success code. bili names it and exits 4
+rather than printing `[]`, and a logged-in cookie is what changes it. Reading a
+single folder by its `ml` id used to be the way around that and is not any more:
+the folder read answers with the folder's own `media_count` and none of its
+contents, which is the same refusal counted out loud. Both work with a cookie.
 
 ## Dynamics
 
@@ -63,4 +67,4 @@ bili dynamic <dynamic-id>
 ```
 
 See [configuration](/reference/configuration/) for how cookies are supplied and
-why bili never prints them back.
+why `config show` only ever prints them back redacted.

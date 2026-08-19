@@ -64,7 +64,9 @@ bili user 2 --videos -o url | bili crawl - --out ./data --comments
 A crawl makes a lot of requests, so the global politeness controls matter here:
 
 - `--rate` keeps a minimum gap between requests (default 350ms).
-- `--retries` retries on rate-limit and risk-control responses (default 4).
+- `--retries` retries a 429 and a 5xx (default 4). A risk control refusal is
+  never retried, so a crawl that starts seeing them should slow down or get a
+  cookie rather than push harder.
 - The on-disk cache means re-running a crawl over overlapping seeds does not
   re-fetch what it already has; add `--no-cache` to force fresh reads.
 

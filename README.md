@@ -64,11 +64,12 @@ Shell completion is built in: `bili completion bash|zsh|fish|powershell`.
 | `bili popular` | the popular feed, or a weekly selection issue |
 | `bili rank` | the leaderboard, optionally for one partition |
 | `bili id <thing>` | classify and normalize any id or URL |
+| `bili discover <id\|url>...` | breadth-first walk of the graph from a video or creator; `--follow`, `--depth`, `--fanout` |
 | `bili crawl <id\|url>...` | crawl connected records from seed ids into JSONL files |
 | `bili nav` | login state and current WBI keys (debug) |
 | `bili verify --live` | re-measure the endpoint requirement matrix against the live API |
 | `bili config show` | resolved configuration and paths |
-| `bili cache path\|info\|clear` | inspect or clear the on-disk cache |
+| `bili cache path\|stat\|clear` | inspect or clear the on-disk cache |
 | `bili version` | print version, commit, and build date |
 
 Full reference and guides live at [bilibili-cli.tamnd.com](https://bilibili-cli.tamnd.com).
@@ -83,7 +84,7 @@ bili danmaku BV17x411w7KC                  # bullet-chat for the first part
 bili search 'lofi' -n 20                   # search videos
 bili user 122541                           # a creator's profile
 bili bangumi ss12548                       # an anime season
-bili rank --partition dance                # dance leaderboard
+bili rank --tid 129                        # the dance leaderboard
 ```
 
 Records come out as a table (the default on a terminal), list, markdown, JSON,
@@ -144,7 +145,7 @@ bili search 'lofi' -n 20 -o url \
     --color        auto|always|never
     --rate         min spacing between requests (default 350ms)
     --timeout      per-request timeout (default 30s)
-    --retries      retry attempts on 429/-412/5xx (default 4)
+    --retries      retry attempts on 429 and 5xx (default 4; a risk refusal is never retried)
 -j, --workers      concurrency for fan-out commands (default 4)
     --no-cache     bypass the on-disk cache
     --cache-ttl    cache freshness window (default 1h)
@@ -287,7 +288,7 @@ docs/        documentation site (Hugo, tago-doks theme)
 ```
 
 ```bash
-make build   # ./bili
+make build   # ./bin/bili
 make test    # go test ./...
 make vet     # go vet ./...
 make smoke   # build + live smoke script
@@ -297,9 +298,11 @@ Requires Go 1.26+.
 
 The test suite runs entirely offline and always will: stored captures go
 straight into the classifier, and the policy around it (caching, retries) runs
-against a stub transport. The one thing that cannot be checked
-offline is whether bilibili still behaves the way this repository believes, and
-that is what `bili verify --live` is for. It is not part of `go test`, because a
+against a stub transport. That is checked rather than asserted, by running each
+test binary under `sandbox-exec` with the network denied, because a test that
+reaches the network passes on a machine that has one. The one thing that cannot
+be checked offline is whether bilibili still behaves the way this repository
+believes, and that is what `bili verify --live` is for. It is not part of `go test`, because a
 test suite that reaches the network fails on a train. The `drift` workflow runs
 it once a week and opens an issue when a row moves.
 

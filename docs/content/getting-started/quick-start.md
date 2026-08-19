@@ -17,11 +17,11 @@ bili id BV17x411w7KC
 ```
 
 ```
-kind   video
-bvid   BV17x411w7KC
-aid    170001
-url    https://www.bilibili.com/video/BV17x411w7KC
+{"kind":"video","bvid":"BV17x411w7KC","aid":170001,"input":"BV17x411w7KC"}
 ```
+
+That is the piped form. On a terminal the same call renders as a table, and
+`-o list` reads it down the page one field at a time.
 
 It accepts any form: an `av` number, a `BV` string, a `space.bilibili.com` link,
 an `ss`/`ep` season or episode, and more. The other commands accept all the same
@@ -57,15 +57,18 @@ bili comments BV17x411w7KC -o jsonl | head
 The bullet-chat (danmaku) for the video, decoded from protobuf into rows:
 
 ```bash
-bili danmaku BV17x411w7KC -n 5
+bili danmaku BV17x411w7KC -n 5 --fields progress_ms,mode,color,content
 ```
 
 ```
-progress  mode  color     content
-1200      1     16777215  first!
-3400      1     16777215  classic
+progress_ms  mode  color     content
+0            5     16707842  请   君   入   瓮
+0            1     41194     《凉屋游戏》
 ...
 ```
+
+`progress_ms` is the millisecond offset into the video where the comment
+appears, which is the field to sort and bucket on.
 
 ## 4. Find things
 

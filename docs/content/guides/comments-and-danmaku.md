@@ -21,7 +21,7 @@ videos, and figures out the object type from the id you give it:
 ```bash
 bili comments BV17x411w7KC      # a video
 bili comments cv7018872         # a column article
-bili comments au1               # an audio track
+bili comments au1000000         # an audio track
 bili comments <dynamic-id>      # a dynamic post
 ```
 
@@ -42,22 +42,22 @@ bili danmaku BV17x411w7KC
 ```
 
 Danmaku is delivered as protobuf segments, one per six minutes of video. bili
-fetches the segments for a part and decodes them into rows with `progress` (the
-millisecond offset into the video), `mode`, `color`, `fontsize`, `content`, and
-the sender's hashed id.
+fetches the segments for a part and decodes them into rows with `progress_ms`
+(the millisecond offset into the video), `mode`, `color`, `fontsize`, `content`,
+and the sender's hashed id.
 
 Because it is plain data, it answers questions a player cannot:
 
 ```bash
 # the busiest moments, by comment count per 10s bucket
 bili danmaku BVID -o jsonl \
-  | jq -r '(.progress/10000|floor) ' | sort -n | uniq -c | sort -rn | head
+  | jq -r '(.progress_ms/10000|floor)' | sort -n | uniq -c | sort -rn | head
 
 # every comment in the first minute
-bili danmaku BVID -o jsonl | jq -r 'select(.progress < 60000) | .content'
+bili danmaku BVID -o jsonl | jq -r 'select(.progress_ms < 60000) | .content'
 ```
 
-For a multi-part video, `--page` selects the part (see
+For a multi-part video, `-p` selects the part (see
 [videos](/guides/videos/)).
 
 ## Pulling both at scale

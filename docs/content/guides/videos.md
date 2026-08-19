@@ -31,12 +31,17 @@ bili search lofi -o url | bili video -      # everything a search found
 
 Many videos have several parts, each with its own `cid`. The `streams` and
 `danmaku` commands work on one part at a time and default to the first. Pick
-another with `--page` (1-based) or by passing the `cid` directly with `--cid`:
+another with `-p`, which is 1-based and counts parts the way the site labels
+them, P1, P2 and so on:
 
 ```bash
 bili video BVID -o json        # look at the "pages" array for the parts
-bili danmaku BVID --page 2     # bullet-chat for the second part
+bili danmaku BVID -p 2         # bullet-chat for the second part
+bili streams BVID -p 2         # the streams for that same part
 ```
+
+`--page` is the global pagination flag and has nothing to do with parts, so it
+is `-p` you want here.
 
 ## Related videos
 
@@ -46,7 +51,7 @@ bili related BV17x411w7KC -o url     # just the watch URLs
 ```
 
 This is the same list bilibili shows alongside a video, which makes it the
-natural edge to follow when [crawling](/crawling/).
+natural edge to follow when [crawling](/guides/crawling/).
 
 ## Streams
 
@@ -112,13 +117,13 @@ decrypt anything.
 bili danmaku BV17x411w7KC
 ```
 
-Each row is one comment that scrolls across the video: its `progress` (the
+Each row is one comment that scrolls across the video: its `progress_ms` (the
 millisecond offset where it appears), `mode`, `color`, `fontsize`, and `content`.
 The data arrives as protobuf and bili decodes it into plain records, so it sorts,
 filters, and pipes like anything else:
 
 ```bash
-bili danmaku BVID -o jsonl | jq -r 'select(.progress < 10000) | .content'
+bili danmaku BVID -o jsonl | jq -r 'select(.progress_ms < 10000) | .content'
 ```
 
 See [comments and danmaku](/guides/comments-and-danmaku/) for the conversation

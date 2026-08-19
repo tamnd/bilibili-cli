@@ -14,7 +14,7 @@ A season is addressed several ways, and `bangumi` accepts all of them:
 
 ```bash
 bili bangumi ss33802     # by season id
-bili bangumi ep331204    # by a single episode id
+bili bangumi ep330798    # by a single episode id
 bili bangumi md28229233  # by the media (detail page) id
 ```
 
@@ -30,7 +30,7 @@ bili bangumi ss33802 -o json     # season plus every episode, lossless
 ## Audio
 
 ```bash
-bili audio au1
+bili audio au1000000
 ```
 
 `audio` resolves an audio track to its metadata and statistics: title, uploader,

@@ -10,31 +10,37 @@ or let bili choose: a table when writing to a terminal, JSONL when piped.
 ## Formats
 
 ```bash
-bili search lofi -o table   # aligned columns for reading
-bili search lofi -o jsonl   # one JSON object per line, for piping
-bili search lofi -o json    # a single JSON array
-bili search lofi -o csv     # spreadsheet friendly
-bili search lofi -o tsv     # tab-separated
-bili search lofi -o yaml    # YAML documents
-bili search lofi -o url     # just the URL column
-bili search lofi -o raw     # the underlying record as pretty-printed JSON
+bili search lofi -o table     # aligned columns for reading
+bili search lofi -o list      # one short named section per record
+bili search lofi -o markdown  # a pipe table that pastes into an issue
+bili search lofi -o jsonl     # one JSON object per line, for piping
+bili search lofi -o json      # a single JSON array
+bili search lofi -o csv       # spreadsheet friendly
+bili search lofi -o tsv       # tab-separated
+bili search lofi -o url       # just the URL column
+bili search lofi -o raw       # the underlying record as pretty-printed JSON
 ```
 
 | Format | Best for |
 |---|---|
 | `table` | Reading on a terminal |
+| `list` | Reading one record top to bottom, and it streams as records arrive |
+| `markdown` | Pasting into an issue or a README |
 | `jsonl` | Piping into another tool, one object at a time |
 | `json` | Loading a whole result as an array |
 | `csv` / `tsv` | Spreadsheets and quick column math |
-| `yaml` | Reading a single rich record top to bottom |
 | `url` | Feeding URLs into other commands |
 | `raw` | The full record, pretty-printed |
+
+There is no `yaml`. It was an undocumented alias and was removed in v0.1.1; pipe
+`-o jsonl` through `yq` if that is what you want.
 
 ## Rich, lossless records
 
 bili keeps the fields the API returns rather than flattening them. The `table`,
-`csv`, and `url` views are readable projections; `json`, `jsonl`, and `yaml` are
-the complete record. When in doubt about what a command knows, ask for JSON:
+`list`, `markdown`, `csv` and `url` views are readable projections; `json`,
+`jsonl` and `raw` are the complete record. When in doubt about what a command
+knows, ask for JSON:
 
 ```bash
 bili video BV17x411w7KC -o json | jq 'keys'
@@ -53,13 +59,17 @@ when a downstream tool expects bare rows.
 
 ## Templating rows
 
-For full control over each line, apply a Go `text/template`. Fields are the JSON
-keys, capitalised:
+For full control over each line, apply a Go `text/template`. The template runs
+against the record as JSON, so the names are the JSON keys exactly as they
+appear in `-o json`, lower case and underscored, not the Go field names:
 
 ```bash
-bili search lofi --template '{{.BVID}} {{.Title}}'
-bili video BVID --template '{{.Title}} has {{.ViewCount}} views'
+bili search lofi --template '{{.bvid}} {{.title}}'
+bili video BV17x411w7KC --template '{{.title}} has {{.view_count}} views'
 ```
+
+A name that is not a key renders as `<no value>` rather than failing, so check a
+template against `-o json | jq keys` when a line comes out empty.
 
 ## The envelope
 
