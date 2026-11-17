@@ -6,6 +6,8 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/tamnd/bilibili-cli)](https://goreportcard.com/report/github.com/tamnd/bilibili-cli)
 [![License](https://img.shields.io/github/license/tamnd/bilibili-cli)](./LICENSE)
 
+[English](README.md) · [简体中文](README.zh-CN.md)
+
 A command line for [bilibili.com](https://www.bilibili.com). `bili` resolves
 any video, user, comment, danmaku, dynamic, live room, bangumi, audio, article,
 or favorite folder into clean structured records, and downloads audio through
